@@ -1,9 +1,9 @@
-//WiFi Headers
+// WiFi & ESP Headers
 #include <esp_wifi.h>
 #include <esp_now.h>
 #include <WiFi.h>
 
-//Utility Headers
+// Utility Headers
 #include <vector>
 #include <string>
 #include <assert.h>
@@ -16,6 +16,11 @@ struct Message;
 class Peer;
 bool SendMessage(Peer target, const Message message);
 //================================================================================================
+
+
+// ╔══════════════════════╗
+// ║  Class Abstractions  ║
+// ╚══════════════════════╝
 
 class MAC {
   public:
@@ -34,6 +39,7 @@ class MAC {
                     addr[3], addr[4], addr[5]);
       return std::string(buf);
     }
+
     const char* to_cstr(){
       return to_string().c_str();
     }
@@ -44,10 +50,12 @@ class MAC {
     std::vector<uint8_t> addr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
 };
 
+// Compare MAC addresses
 bool operator==(const MAC& left, const MAC& right){
   return left.addr == right.addr;
 }
 
+// Abstraction for interacting with other ESP32 devices
 class Peer {
   public:
     Peer(MAC aMac) : mac{aMac} {
@@ -65,8 +73,10 @@ class Peer {
     bool AddPeer(){
       auto ret = esp_now_add_peer(peer_info.get());
       added = ret == ESP_OK ;
-      prev_added =  ret == ESP_ERR_ESPNOW_EXIST;
-      Serial.println((prev_added) ? "peer already present" : "");
+      prev_added = ret == ESP_ERR_ESPNOW_EXIST;
+      if (prev_added) {
+        Serial.println("peer already present");
+      }
       return added || prev_added;
     }
 
@@ -84,14 +94,41 @@ class Peer {
     bool added{false};
     bool prev_added{false};
     MAC mac;
-    //TODO: should probably make this into a shared_ptr
     std::shared_ptr<esp_now_peer_info_t> peer_info = std::make_shared<esp_now_peer_info_t>();
 };
 
+
+// ╔═══════════════════╗
+// ║  Types and Enums  ║
+// ╚═══════════════════╝
+
+typedef enum MessageType {
+  Discovery,
+  DiscoveryResponse,
+  Text,
+  ACK,
+  NACK,
+  Invalid,
+} MessageType;
+
+static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - (sizeof(int) + sizeof(MessageType));
+
+typedef struct Message {
+    MessageType type;
+    int id;
+    char info[MessageSize];
+} Message;
+
+// Broadcast MAC is a way to send messages to all devices.
+//   This does not change across all devices
 MAC BroadcastMAC = MAC(std::vector<uint8_t>{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF});
 Peer BroadcastPeer = Peer(BroadcastMAC);
-
 std::vector<Peer> Peers;
+
+//
+// ╔════════════════════════════╗
+// ║  Generic Helpers and Init  ║
+// ╚════════════════════════════╝
 
 void InitializeESPNow(){
   // Initialize Serial Monitor
@@ -112,6 +149,44 @@ void InitializeESPNow(){
   }
 }
 
+// Register different callbacks for sender/receiver
+void RegisterListen(bool isSender) {
+  if (isSender) {
+    esp_now_register_recv_cb(OnSenderReceive);
+  } else {
+    esp_now_register_recv_cb(OnDataReceive);
+  }
+}
+
+// Send out a discovery message
+void AnnouceMAC(){
+  Message message;
+  message.info[0] = '\0';
+  message.type = MessageType::Discovery;
+  message.id = 0;
+  
+  bool success = SendMessage(message);
+  Serial.println((success) ? "Annouced successfully" : "Error: couldn't send message");
+}
+
+bool SendMessage(Peer target, const Message message){
+  // Send message via ESP-NOW
+  // TODO: Keep track of expected sequence numbers (message ids) within each peer
+  if (!target.IsAdded()){
+    Serial.print("Cannot send message to unadded peer target:");
+    Serial.println(target.mac.to_cstr());
+    return false;
+  }
+  esp_err_t result = esp_now_send(target.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
+   
+  return result == ESP_OK;
+}
+
+
+// ╔═══════════════╗
+// ║  MAC Helpers  ║
+// ╚═══════════════╝
+
 MAC GetMACAddress(){
   MAC baseMac;
   esp_err_t ret = esp_wifi_get_mac(WIFI_IF_STA, baseMac.GetAddressArray());
@@ -128,22 +203,6 @@ MAC GetMACAddress(){
   return std::move(baseMac);
 }
 
-typedef enum MessageType {
-  Discovery,
-  DiscoveryResponse,
-  Text,
-  ACK,
-  NACK,
-  Invalid,
-} MessageType;
-
-static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - (sizeof(int) + sizeof(MessageType));
-typedef struct Message {
-    MessageType type;
-    int id;
-    char info[MessageSize];
-} Message;
-
 MAC GetSenderMAC(const esp_now_recv_info* info){
   std::vector<uint8_t> srcAddr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
   memcpy(srcAddr.data(), info->src_addr, 6);
@@ -158,30 +217,24 @@ MAC GetDestinationMAC(const esp_now_recv_info* info){
   return dst;
 }
 
-bool SendMessage(Peer target, const Message message){
-  // Send message via ESP-NOW
-  if (!target.IsAdded()){
-    Serial.print("Cannot send message to unadded peer target:");
-    Serial.println(target.mac.to_cstr());
-    return false;
-  }
-  esp_err_t result = esp_now_send(target.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
-   
-  return result == ESP_OK;
-}
+
+// ╔═══════════════════════════════════════╗
+// ║  Handlers and Callbacks for Receiver  ║
+// ╚═══════════════════════════════════════╝
 
 void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
   MAC source = GetSenderMAC(info);
   Serial.print("Recieved Discovery Message from: ");
   Serial.println(source.to_cstr());
 
-
   //Add peer
   Peer source_peer = Peer(source);
+
   if (!source_peer.AddPeer()){
     Serial.println("failed to add discovery sender as peer");
     return;
   }
+
   if (!source_peer.PrevAdded()){
     Peers.emplace_back(source_peer);
   }
@@ -190,7 +243,7 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
     //Send reply
     Message message;
     message.info[0] = '\0';
-    message.type = MessageType::Discovery;
+    message.type = MessageType::DiscoveryResponse;
     message.id = 1;
     bool success = SendMessage(source_peer, message);
     Serial.println((success) ? "Replied successfully" : "Error: couldn't send message");
@@ -212,6 +265,10 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
     case MessageType::Discovery:
       HandleDiscovery(info, message);
       break;
+    case MessageType::Text:
+      Serial.print("New Message: ");
+      Serial.println(message.info);
+      break;
     case MessageType::Invalid:
     default:
       Serial.print("Message Info: ");
@@ -224,14 +281,56 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   }
 }
 
-void RegisterListen() {esp_now_register_recv_cb(OnDataReceive);}
 
-void AnnouceMAC(){
-  Message message;
-  message.info[0] = '\0';
-  message.type = MessageType::Discovery;
-  message.id = 0;
-  
-  bool success = SendMessage(BroadcastPeer, message);
-  Serial.println((success) ? "Annouced successfully" : "Error: couldn't send message");
+// ╔═════════════════════════════════════╗
+// ║  Handlers and Callbacks for Sender  ║
+// ╚═════════════════════════════════════╝
+
+void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message message) {
+  MAC source = GetSenderMAC(info);
+  Serial.print("Recieved DiscoveryResponse Message from: ");
+  Serial.println(source.to_cstr());
+
+  //Add peer
+  Peer source_peer = Peer(source);
+
+  if (!source_peer.AddPeer()){
+    Serial.println("failed to add ACK sender as peer");
+    return;
+  }
+
+  if (!source_peer.PrevAdded()){
+    Peers.emplace_back(source_peer);
+  }
 }
+
+void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) {
+  if (len != sizeof(Message)){
+#if DEBUG
+    Serial.println("Error: received message of different size than expected");
+#endif
+    return;
+  }
+
+  Message message;
+  memcpy(&message, incomingData, sizeof(Message));
+
+  switch (message.type) {
+    case MessageType::DiscoveryResponse:
+      HandleSenderDiscoveryResponse(info, message);
+      break;
+    case MessageType::Invalid:
+    default:
+      MAC source = GetSenderMAC(info);
+      Serial.print("Message From: ");
+      Serial.println(source.to_cstr());
+      Serial.print("Message Info: ");
+      Serial.println(message.info);
+      Serial.print("Message Type: ");
+      Serial.println(message.type);
+      Serial.print("Message ID: ");
+      Serial.println(message.id);
+      break;
+  }
+}
+
