@@ -1,7 +1,7 @@
 #include "Helpers.h"
 
 //0 for receiver, 1 for sender
-#define Sender 0
+#define Sender 1
 
 void setup() {
   InitializeESPNow();

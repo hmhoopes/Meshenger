@@ -15,6 +15,8 @@ class MAC;
 struct Message;
 class Peer;
 bool SendMessage(Peer target, const Message message);
+void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
+void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 //================================================================================================
 
 
@@ -165,7 +167,7 @@ void AnnouceMAC(){
   message.type = MessageType::Discovery;
   message.id = 0;
   
-  bool success = SendMessage(message);
+  bool success = SendMessage(BroadcastPeer, message);
   Serial.println((success) ? "Annouced successfully" : "Error: couldn't send message");
 }
 
@@ -250,7 +252,7 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
   }
 }
 
-void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len){
+void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) {
   if (len != sizeof(Message)){
 #if DEBUG
     Serial.println("Error: received message of different size than expected");
