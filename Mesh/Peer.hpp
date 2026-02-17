@@ -31,9 +31,6 @@ class Peer {
       auto ret = esp_now_add_peer(peer_info.get());
       added = ret == ESP_OK ;
       prev_added = ret == ESP_ERR_ESPNOW_EXIST;
-      if (prev_added) {
-        Serial.println("peer already present");
-      }
       return added || prev_added;
     }
 

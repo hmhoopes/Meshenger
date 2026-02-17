@@ -76,7 +76,7 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
   Peer source_peer = Peer(source);
 
   if (!source_peer.AddPeer()){
-    Serial.println("failed to add discovery sender as peer");
+    Serial.println("Failed to add discovery sender as peer");
     return;
   }
 
@@ -104,7 +104,7 @@ void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message 
   Peer source_peer = Peer(source);
 
   if (!source_peer.AddPeer()){
-    Serial.println("failed to add ACK sender as peer");
+    Serial.println("Failed to add ACK sender as peer");
     return;
   }
 
@@ -130,9 +130,6 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
       HandleDiscovery(info, message);
       break;
     case MessageType::Text:
-      Serial.print("New Message: ");
-      Serial.println(message.info);
-      break;
     case MessageType::Invalid:
     default:
       Serial.print("Message Recieved: ");
