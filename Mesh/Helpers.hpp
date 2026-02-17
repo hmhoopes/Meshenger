@@ -1,3 +1,10 @@
+#ifndef MESH_HELPERS_HPP
+#define MESH_HELPERS_HPP 
+
+#include "MAC.hpp"
+#include "Message.hpp"
+#include "Peer.hpp"
+
 // WiFi & ESP Headers
 #include <esp_wifi.h>
 #include <esp_now.h>
@@ -8,118 +15,10 @@
 #include <string>
 #include <assert.h>
 
-#define DEBUG 0
-
 //================================== Forward Decls ===============================================
-class MAC;
-struct Message;
-class Peer;
-bool SendMessage(Peer target, const Message message);
 void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 //================================================================================================
-
-
-// ╔══════════════════════╗
-// ║  Class Abstractions  ║
-// ╚══════════════════════╝
-
-class MAC {
-  public:
-    MAC() {}
-    MAC(std::vector<uint8_t> aAddr) {
-      assert(aAddr.size() == 6);
-      memcpy(addr.data(), aAddr.data(), sizeof(uint8_t) * 6);
-    }
-
-    uint8_t* GetAddressArray() {return addr.data();}
-
-    std::string to_string(){
-      char buf[100];
-      sprintf(buf, "%02x:%02x:%02x:%02x:%02x:%02x\n",
-                    addr[0], addr[1], addr[2],
-                    addr[3], addr[4], addr[5]);
-      return std::string(buf);
-    }
-
-    const char* to_cstr(){
-      return to_string().c_str();
-    }
-
-  private:
-    friend bool operator==(const MAC& left, const MAC& right);
-    //Using vector to simplify moving data
-    std::vector<uint8_t> addr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-};
-
-// Compare MAC addresses
-bool operator==(const MAC& left, const MAC& right){
-  return left.addr == right.addr;
-}
-
-// Abstraction for interacting with other ESP32 devices
-class Peer {
-  public:
-    Peer(MAC aMac) : mac{aMac} {
-      memcpy(peer_info->peer_addr, mac.GetAddressArray(), 6);
-      peer_info->channel = 0;  
-      peer_info->encrypt = false;
-    }
-
-    //TODO: add method of interacting with source peer properties
-    //TODO: investigate if we need to prevent changes after adding?
-    const MAC GetMAC() const{
-      return mac;
-    }
-
-    bool AddPeer(){
-      auto ret = esp_now_add_peer(peer_info.get());
-      added = ret == ESP_OK ;
-      prev_added = ret == ESP_ERR_ESPNOW_EXIST;
-      if (prev_added) {
-        Serial.println("peer already present");
-      }
-      return added || prev_added;
-    }
-
-    bool PrevAdded(){
-      return prev_added;
-    }
-
-    bool IsAdded(){
-      return added || prev_added;
-    }
-
-  private:
-    friend bool SendMessage(Peer target, const Message message);
-
-    bool added{false};
-    bool prev_added{false};
-    MAC mac;
-    std::shared_ptr<esp_now_peer_info_t> peer_info = std::make_shared<esp_now_peer_info_t>();
-};
-
-
-// ╔═══════════════════╗
-// ║  Types and Enums  ║
-// ╚═══════════════════╝
-
-typedef enum MessageType {
-  Discovery,
-  DiscoveryResponse,
-  Text,
-  ACK,
-  NACK,
-  Invalid,
-} MessageType;
-
-static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - (sizeof(int) + sizeof(MessageType));
-
-typedef struct Message {
-    MessageType type;
-    int id;
-    char info[MessageSize];
-} Message;
 
 // Broadcast MAC is a way to send messages to all devices.
 //   This does not change across all devices
@@ -171,54 +70,6 @@ void AnnouceMAC(){
   Serial.println((success) ? "Annouced successfully" : "Error: couldn't send message");
 }
 
-bool SendMessage(Peer target, const Message message){
-  // Send message via ESP-NOW
-  // TODO: Keep track of expected sequence numbers (message ids) within each peer
-  if (!target.IsAdded()){
-    Serial.print("Cannot send message to unadded peer target:");
-    Serial.println(target.mac.to_cstr());
-    return false;
-  }
-  esp_err_t result = esp_now_send(target.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
-   
-  return result == ESP_OK;
-}
-
-
-// ╔═══════════════╗
-// ║  MAC Helpers  ║
-// ╚═══════════════╝
-
-MAC GetMACAddress(){
-  MAC baseMac;
-  esp_err_t ret = esp_wifi_get_mac(WIFI_IF_STA, baseMac.GetAddressArray());
-#if DEBUG
-  switch (ret){
-    case ESP_ERR_INVALID_ARG:
-      Serial.println("Error: ESP_ERR_INVALID_ARG");
-    case ESP_ERR_WIFI_NOT_INIT:
-      Serial.println("Error: ESP_ERR_WIFI_NOT_INIT (initialize wifi module in setup to fix)");
-    case ESP_ERR_WIFI_IF:
-      Serial.println("Error: ESP_ERR_WIFI_IF");
-  }
-#endif
-  return std::move(baseMac);
-}
-
-MAC GetSenderMAC(const esp_now_recv_info* info){
-  std::vector<uint8_t> srcAddr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-  memcpy(srcAddr.data(), info->src_addr, 6);
-  MAC src = MAC(srcAddr);
-  return src;
-}
-
-MAC GetDestinationMAC(const esp_now_recv_info* info){
-  std::vector<uint8_t> dstAddr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-  memcpy(dstAddr.data(), info->des_addr, 6);
-  MAC dst = MAC(dstAddr);
-  return dst;
-}
-
 
 // ╔═══════════════════════════════════════╗
 // ║  Handlers and Callbacks for Receiver  ║
@@ -254,9 +105,7 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
 
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) {
   if (len != sizeof(Message)){
-#if DEBUG
     Serial.println("Error: received message of different size than expected");
-#endif
     return;
   }
 
@@ -308,9 +157,7 @@ void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message 
 
 void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) {
   if (len != sizeof(Message)){
-#if DEBUG
     Serial.println("Error: received message of different size than expected");
-#endif
     return;
   }
 
@@ -336,3 +183,4 @@ void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData,
   }
 }
 
+#endif
