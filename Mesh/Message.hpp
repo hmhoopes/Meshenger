@@ -19,6 +19,16 @@ typedef enum MessageType {
 static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - (sizeof(int) + sizeof(MessageType));
 
 typedef struct Message {
+    std::string to_string(){
+      char buf[ESP_NOW_MAX_DATA_LEN];
+      sprintf(buf, "Type: %d | ID: %d | Message: %s\n", type, id, info);
+      return std::string(buf);
+    }
+
+    const char* to_cstr(){
+      return to_string().c_str();
+    }
+
     MessageType type;
     int id;
     char info[MessageSize];
