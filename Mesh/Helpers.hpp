@@ -136,7 +136,7 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
     case MessageType::Invalid:
     default:
       Serial.print("Message Recieved: ");
-      Serial.println(message.to_cstr);
+      Serial.println(message.to_cstr());
       break;
   }
 }
