@@ -1,19 +1,11 @@
 #include "../../Helpers.hpp"
 
-//0 for receiver, 1 for sender
-#define Sender 1
-
 void setup() {
   InitializeESPNow();
-#if Sender
-  RegisterListen(true);
-#else
-  RegisterListen(false);
-#endif
+  RegisterListen();
 }
 
 void loop() {
-#if Sender
   AnnouceMAC();
   delay(2000);
   Peer receiver = Peers.front();
@@ -27,6 +19,4 @@ void loop() {
     Serial.println("Could not send text message.");
   }
   delay(2000);
-#else
-#endif
 }

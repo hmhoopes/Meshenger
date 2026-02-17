@@ -50,13 +50,9 @@ void InitializeESPNow(){
   }
 }
 
-// Register different callbacks for sender/receiver
-void RegisterListen(bool isSender) {
-  if (isSender) {
-    esp_now_register_recv_cb(OnSenderReceive);
-  } else {
-    esp_now_register_recv_cb(OnDataReceive);
-  }
+// Register callbacks
+void RegisterListen() {
+  esp_now_register_recv_cb(OnDataReceive);
 }
 
 // Send out a discovery message
@@ -70,10 +66,6 @@ void AnnouceMAC(){
   Serial.println((success) ? "Annouced successfully" : "Error: couldn't send message");
 }
 
-
-// ╔═══════════════════════════════════════╗
-// ║  Handlers and Callbacks for Receiver  ║
-// ╚═══════════════════════════════════════╝
 
 void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
   MAC source = GetSenderMAC(info);
@@ -103,6 +95,24 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
   }
 }
 
+void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message message) {
+  MAC source = GetSenderMAC(info);
+  Serial.print("Recieved DiscoveryResponse Message from: ");
+  Serial.println(source.to_cstr());
+
+  //Add peer
+  Peer source_peer = Peer(source);
+
+  if (!source_peer.AddPeer()){
+    Serial.println("failed to add ACK sender as peer");
+    return;
+  }
+
+  if (!source_peer.PrevAdded()){
+    Peers.emplace_back(source_peer);
+  }
+}
+
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) {
   if (len != sizeof(Message)){
     Serial.println("Error: received message of different size than expected");
@@ -113,6 +123,9 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   memcpy(&message, incomingData, sizeof(Message));
 
   switch (message.type){
+    case MessageType::DiscoveryResponse:
+      HandleSenderDiscoveryResponse(info, message);
+      break;
     case MessageType::Discovery:
       HandleDiscovery(info, message);
       break;
@@ -132,55 +145,5 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   }
 }
 
-
-// ╔═════════════════════════════════════╗
-// ║  Handlers and Callbacks for Sender  ║
-// ╚═════════════════════════════════════╝
-
-void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message message) {
-  MAC source = GetSenderMAC(info);
-  Serial.print("Recieved DiscoveryResponse Message from: ");
-  Serial.println(source.to_cstr());
-
-  //Add peer
-  Peer source_peer = Peer(source);
-
-  if (!source_peer.AddPeer()){
-    Serial.println("failed to add ACK sender as peer");
-    return;
-  }
-
-  if (!source_peer.PrevAdded()){
-    Peers.emplace_back(source_peer);
-  }
-}
-
-void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) {
-  if (len != sizeof(Message)){
-    Serial.println("Error: received message of different size than expected");
-    return;
-  }
-
-  Message message;
-  memcpy(&message, incomingData, sizeof(Message));
-
-  switch (message.type) {
-    case MessageType::DiscoveryResponse:
-      HandleSenderDiscoveryResponse(info, message);
-      break;
-    case MessageType::Invalid:
-    default:
-      MAC source = GetSenderMAC(info);
-      Serial.print("Message From: ");
-      Serial.println(source.to_cstr());
-      Serial.print("Message Info: ");
-      Serial.println(message.info);
-      Serial.print("Message Type: ");
-      Serial.println(message.type);
-      Serial.print("Message ID: ");
-      Serial.println(message.id);
-      break;
-  }
-}
 
 #endif
