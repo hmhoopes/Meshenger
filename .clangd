@@ -1,0 +1,14 @@
+# .clangd
+CompileFlags:
+  Add:
+    - --target=xtensa-esp32-elf   # ESP32 target triple
+    - -DARDUINO=10819
+    - -DARDUINO_ESP32_DEV
+    - -DESP32
+  Remove:
+    - -mtext-section-literals     # clangd doesn't understand this Xtensa flag
+    - -mlongcalls
+    - -fno-tree-switch-conversion
+Diagnostics:
+  Suppress:
+    - drv_unknown_argument
