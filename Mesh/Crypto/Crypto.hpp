@@ -3,15 +3,20 @@
 
 //cpp headers
 #include <vector>
+#include <span>
+#include <assert.h>
 
 //crypto headers
 #include <Crypto.h>
 #include <SHA256.h>
+#include <AES.h>
+#include <P521.h>
 
 #define P521_PUBKEY_SIZE 132
+#define P521_SIG_SIZE P521_PUBKEY_SIZE
 #define P521_PRIVKEY_SIZE 66
 #define SHA256_SIZE 32
-#define AES_SIZE SHA256_SIZE
+#define AES_KEY_SIZE SHA256_SIZE
 #define AES_BLOCK_SIZE 16
 
 uint8_t Root_PubKey[P521_PUBKEY_SIZE] = {
@@ -39,23 +44,62 @@ uint8_t Root_PrivKey[P521_PRIVKEY_SIZE] = {
 
 SHA256 sha256;
 
+#define MESSAGE_LIM 100
+
 //item to be kept in list, tied to a user
+//created from P521 shared secret
 class Tunnel {
-    /*
-    contains:
-        - secret key for a peer
-        - counter of how many messages it has been used for
-        - time when it was opened
-    functions:
-        - check if it is still valid
-        - encrypt message with it
-        - decrypt message with it
-        - create with shared secret
-    */    
+  public:
+    std::vector<uint8_t> EncryptMessage(std::span<const std::byte> aMessage){
+      std::vector<uint8_t> cipher;
+      const int blocks = std::ceil(static_cast<float>(aMessage.size()) / AES_BLOCK_SIZE);
+      cipher.resize(AES_BLOCK_SIZE * blocks);
+      for (int i = 0; i < blocks; i++){
+        aes.encryptBlock(reinterpret_cast<uint8_t *>(cipher.data()) + i*AES_BLOCK_SIZE, reinterpret_cast<const uint8_t *>(aMessage.data()) + i*AES_BLOCK_SIZE);
+      } 
+      return cipher;
+    } 
+
+    std::vector<uint8_t> DecryptMessage(std::span<const std::byte> aCipherText){
+      std::vector<uint8_t> plain;
+      const int blocks = std::ceil(static_cast<float>(aCipherText.size()) / AES_BLOCK_SIZE);
+      plain.resize(AES_BLOCK_SIZE * blocks);
+      for (int i = 0; i < blocks; i++){
+        aes.decryptBlock(reinterpret_cast<uint8_t *>(plain.data()) + i*AES_BLOCK_SIZE, reinterpret_cast<const uint8_t *>(aCipherText.data()) + i*AES_BLOCK_SIZE);
+      } 
+      return plain;
+    }
+
+    bool CheckValid(){
+      return use_count <= MESSAGE_LIM;
+    }
+
+    Tunnel(std::span<const std::byte> aSharedSecret){
+      assert(aSharedSecret.size() == P521_PRIVKEY_SIZE);
+
+      secret_key.reserve(SHA256_SIZE);
+      sha256.update(aSharedSecret.data(), P521_PRIVKEY_SIZE);
+      sha256.finalize(secret_key.data(), SHA256_SIZE);
+      sha256.clear();
+      
+      aes.setKey(secret_key.data(), AES_KEY_SIZE);
+    }
+
+  private:
+    std::vector<uint8_t> secret_key;
+    AES256 aes;
+    int use_count = 0;
 };
 
-// function to setup connection
+// function to setup connection, given user/target, return Tunnel
+// TODO: setup this once messaging infrastructure is present
+//  make it friend of Tunnel?
 
 // function to verify a certificate, given pub key and signature
+bool Verify(std::span<const std::byte> aSig, std::span<const std::byte> aMessage){
+  assert(aSig.size() == P521_SIG_SIZE);
+  return P521::verify(reinterpret_cast<const uint8_t *>(aSig.data()), Root_PubKey, aMessage.data(), aMessage.size());
+}
+
 
 #endif

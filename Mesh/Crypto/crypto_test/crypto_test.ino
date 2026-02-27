@@ -1,8 +1,11 @@
 //Cryptography header
 #include "../../Crypto/Crypto.hpp"
 
+//cpp algorithms
 #include <string>
 #include <cmath>
+#include <span>
+#include <vector>
 
 // crypto headers
 #include <Crypto.h>
@@ -17,8 +20,51 @@ void setup() {
 
 void loop() {
   // put your main code here, to run repeatedly:
-  //Demo for using symmetric encryption w/ shared secret
-  uint8_t f1[P521_PRIVKEY_SIZE];
+  //Demo for Crypto library functionality
+  std::vector<char> message = {'1','2','3','4','5','6','7','8','9','1','2','3','4','5','6','7','8','9','1','2','3','4','5','6','7','8','9','\0'};
+
+  //signature should be loaded on each unit, instead of generated using these lines
+  std::vector<uint8_t> sig;
+  sig.resize(P521_SIG_SIZE);
+  P521::sign(reinterpret_cast<uint8_t *>(sig.data()), Root_PrivKey, message.data(), message.size());
+  
+  // test verification
+  bool verified = Verify(std::as_bytes(std::span(sig)), std::as_bytes(std::span(message)));
+  Serial.print("verified: ");
+  Serial.println(verified ? "true" : "false");
+
+  // code for establishing secret should be replaced eventually
+  std::vector<uint8_t> f1;
+  f1.resize(P521_PRIVKEY_SIZE);
+  std::vector<uint8_t> k1;
+  k1.resize(P521_PUBKEY_SIZE);
+  P521::dh1(reinterpret_cast<uint8_t *>(k1.data()), reinterpret_cast<uint8_t *>(f1.data()));
+
+  std::vector<uint8_t> f2;
+  f2.resize(P521_PRIVKEY_SIZE);
+  std::vector<uint8_t> k2;
+  k2.resize(P521_PUBKEY_SIZE);
+  P521::dh1(reinterpret_cast<uint8_t *>(k2.data()), reinterpret_cast<uint8_t *>(f2.data()));
+
+  P521::dh2(reinterpret_cast<uint8_t *>(k1.data()), reinterpret_cast<uint8_t *>(f2.data()));
+
+  // test encryption + decryption
+  Tunnel tunnel = Tunnel(std::as_bytes(std::span(f2)));
+  auto cipher = tunnel.EncryptMessage(std::as_bytes(std::span(message)));
+  auto plain = tunnel.DecryptMessage(std::as_bytes(std::span(cipher)));
+  
+  char temp_str[10*AES_BLOCK_SIZE];
+  memcpy(&temp_str, message.data(), message.size());
+  Serial.print("message: ");
+  Serial.println(std::string(temp_str).c_str());
+
+  Serial.print("plain: ");
+  memcpy(&temp_str, plain.data(), plain.size());
+  Serial.println(std::string(temp_str).c_str());
+
+
+//Demo for using symmetric encryption w/ shared secret
+/*   uint8_t f1[P521_PRIVKEY_SIZE];
   uint8_t k1[P521_PUBKEY_SIZE];
   P521::dh1(k1, f1);
 
@@ -44,9 +90,9 @@ void loop() {
   Serial.print("hash: 0x");
   Serial.println(std::string(hash_str).c_str());
 
-  char message[AES_BLOCK_SIZE] = "Hello!";
+  char message[10*AES_BLOCK_SIZE] = "1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30";
 
-  uint8_t cipher[AES_BLOCK_SIZE];
+  uint8_t cipher[10*AES_BLOCK_SIZE];
   AES256 aes;
   aes.setKey(hash, SHA256_SIZE);
   for (int i = 0; i < std::ceil(static_cast<float>(sizeof(message)) / AES_BLOCK_SIZE); i++){
@@ -56,7 +102,7 @@ void loop() {
 
   aes.clear();
   aes.setKey(hash, SHA256_SIZE);
-  char message_decrypt[AES_BLOCK_SIZE];
+  char message_decrypt[10*AES_BLOCK_SIZE];
   message_decrypt[16] = '\0';
   for (int i = 0; i < std::ceil(static_cast<float>(sizeof(cipher)) / AES_BLOCK_SIZE); i++){
     Serial.println(i);
@@ -67,7 +113,7 @@ void loop() {
   Serial.println(std::string(message).c_str());
 
   Serial.print("message_decrypt: ");
-  Serial.println(std::string(message_decrypt).c_str());
+  Serial.println(std::string(message_decrypt).c_str()); */
 
 //Demo for generating shared secrets
 /*   uint8_t f1[P521_PRIVKEY_SIZE];
