@@ -7,22 +7,21 @@ void setup() {
 
 void loop() {
   AnnouceMAC();
+#ifdef DEBUG
   Serial.println("DBG: Annouced");
+#endif
   delay(2000);
   if (Peers.size() != 0){
+#ifdef DEBUG
     Serial.println("DBG: Getting front");
+#endif
     Peer receiver = Peers.front();
-    Serial.println("DBG: Making message");
-    Message message;
-    strncpy(message.info, "Hello", MessageSize - 1);  // Prevents buffer overflow
-    message.info[MessageSize - 1] = '\0';  // Ensure null termination
-    message.type = MessageType::Text;
-    message.id = 1;
-    Serial.println("DBG: Sending message");
-    bool success = SendMessage(receiver, message);
-    if (!success) {
-      Serial.println("Could not send text message.");
-    }
+#ifdef DEBUG
+    Serial.println("DBG: Waiting for message.");
+#endif
+    auto inputMessage = Serial.readStringUntil('\n');
+    inputMessage.trim(); // Trim whitespace and \r
+    SendTextMessage(receiver, inputMessage);
   }
   delay(2000);
 }
