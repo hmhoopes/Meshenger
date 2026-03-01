@@ -5,7 +5,7 @@ Description:
     Implements LED indicators for message received, message sent,
     and Bluetooth connection status using an ESP32.
 Inputs:
-    - Serial input from USB (computer or another microcontroller)
+    - Serial input from USB (computer-sided)
 Outputs:
     - Sends and receives data over Bluetooth Serial
     - LED blinks to indicate activity (startup and message receive)
