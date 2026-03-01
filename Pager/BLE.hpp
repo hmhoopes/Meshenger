@@ -43,7 +43,7 @@ class ServerCallbacks : public BLEServerCallbacks {
   void onDisconnect(BLEServer* pServer) {
     deviceConnected = false;
     Advertise();
-    Serial.println("BLE client disconnected\n---------\n---------\n---------\n---------\n---------");
+    Serial.println("BLE client disconnected");
   }
 };
 
