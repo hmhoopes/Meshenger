@@ -1,12 +1,12 @@
 # Meshenger App
 
-Web messaging interface for the LocalESP device. Connects to the ESP32 over **Bluetooth Low Energy (BLE)** using the Nordic UART Service (NUS).
+Web messaging interface for the Pager device. Connects to the ESP32 over **Bluetooth Low Energy (BLE)** using the Nordic UART Service (NUS).
 
 ## Requirements
 
 - **Chrome** (or another browser with [Web Bluetooth](https://caniuse.com/web-bluetooth) support)
 - **HTTPS or localhost** — Web Bluetooth only works in secure contexts
-- **LocalESP** running the BLE NUS sketch (`LocalESP/ble_serial/`)
+- **Pager** running the BLE NUS sketch (`Pager/ble_serial/`)
 
 ## Run the web app
 
@@ -25,16 +25,16 @@ Web messaging interface for the LocalESP device. Connects to the ESP32 over **Bl
 
 ## Usage
 
-1. Flash **LocalESP** with `LocalESP/ble_serial/ble_serial.ino` (Arduino IDE, ESP32 board).
-2. Power the ESP32 and wait until it advertises as **"Meshenger-LocalESP"**.
+1. Flash **Pager** with `Pager/ble_serial/ble_serial.ino` (Arduino IDE, ESP32 board).
+2. Power the ESP32 and wait until it advertises as **"Meshenger-Pager"**.
 3. Open the web app in Chrome (via localhost or HTTPS).
-4. Click **Connect to device**, choose **Meshenger-LocalESP** in the browser’s device picker.
+4. Click **Connect to device**, choose **Meshenger-Pager** in the browser’s device picker.
 5. Type messages and press Enter or **Send**. Messages go to the ESP32 over BLE; replies from the device appear in the chat.
 
 ## Architecture
 
 ```
-Browser (Web Bluetooth)  ←→  BLE NUS  ←→  LocalESP (ESP32)
+Browser (Web Bluetooth)  ←→  BLE NUS  ←→  Pager (ESP32)
                                     ←→  Serial / mesh (future)
 ```
 

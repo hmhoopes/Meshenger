@@ -1,5 +1,5 @@
 /*
- * LocalESP BLE serial bridge - Nordic UART Service (NUS).
+ * Pager BLE serial bridge - Nordic UART Service (NUS).
  * Use with the Meshenger web app: connect via Web Bluetooth to send/receive messages.
  *
  * NUS UUIDs (same as web app):
@@ -12,7 +12,7 @@
 #include <BLEUtils.h>
 #include <BLE2902.h>
 
-#define DEVICE_NAME "Meshenger-LocalESP"
+#define DEVICE_NAME "Meshenger-Pager"
 #define SERVICE_UUID        "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_RX   "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_TX   "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -52,7 +52,7 @@ class RxCallbacks : public BLECharacteristicCallbacks {
 
 void setup() {
   Serial.begin(115200);
-  Serial.println("Meshenger LocalESP - BLE NUS");
+  Serial.println("Meshenger Pager - BLE NUS");
   Serial.println("Connect with the web app (Chrome) or any NUS client.");
 
   BLEDevice::init(DEVICE_NAME);

@@ -3,7 +3,7 @@ FQBN     = esp32:esp32:esp32
 PORT     ?= /dev/ttyUSB0
 BAUD     ?= 115200
 NODE_DIR = Mesh/Node/node
-ESP_DIR  = LocalESP
+ESP_DIR  = Pager
 
 .PHONY: build upload monitor lsp-index
 

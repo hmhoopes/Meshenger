@@ -1,4 +1,4 @@
-# LocalESP
+# Pager
 
 ESP32 device paired with the Meshenger app. Two options:
 
@@ -6,7 +6,7 @@ ESP32 device paired with the Meshenger app. Two options:
 
 - **Sketch:** `ble_serial/ble_serial.ino`
 - Exposes **Nordic UART Service (NUS)** over BLE.
-- Use with the **web app** in `App/`: connect in Chrome via Web Bluetooth to **"Meshenger-LocalESP"**.
+- Use with the **web app** in `App/`: connect in Chrome via Web Bluetooth to **"Meshenger-Pager"**.
 - Data received from the app is printed on Serial; data from Serial is sent to the app (e.g. for future mesh→app messages).
 
 ## 2. Classic Bluetooth (SPP) — `ping_test.cpp`
