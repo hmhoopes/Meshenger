@@ -1,3 +1,21 @@
+/*
+Project: Meshenger
+Module Name: Helpers.hpp
+Description:
+    Utility and initialization helpers for ESP-NOW mesh communication,
+    message handling, peer management and pager mode behavior.
+Inputs:
+    - esp_now_recv_info pointers, Message structs, MAC addresses,
+      Peer objects, and text strings to various helper functions.
+Outputs:
+    - Sends/receives messages over ESP-NOW, maintains peer list,
+      forwards data to BLE when acting as a pager.
+External Sources:
+    - esp_now, WiFi, BLE libraries, STL containers (vector, optional, etc.)
+Author: Team 2
+Creation Date: 02/11/2026
+*/
+
 #ifndef MESH_HELPERS_HPP
 #define MESH_HELPERS_HPP 
 
@@ -40,25 +58,28 @@ void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData,
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 //================================================================================================
 
-// Used to indicate if device is pager or not
+// isPager:
+// Flag indicating whether this device acts as a BLE pager (forwards mesh messages to BLE client).
 bool isPager = false;
 
-// function to initialize global vars in a way that this ESP32 will operate as a pager
+// SetPagerMode:
+// Configure device to behave as a pager and enable forwarding between BLE and mesh.
 void SetPagerMode(){
   isPager = true;
   sendToMesh = true;
 }
 
-// Broadcast MAC is a way to send messages to all devices.
-//   This does not change across all devices
+// BroadcastMAC & BroadcastPeer:
+// Preconfigured broadcast MAC/Peer used to send discovery messages to all nodes.
 MAC BroadcastMAC = MAC(std::vector<uint8_t>{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF});
 Peer BroadcastPeer = Peer(BroadcastMAC);
+
+// Peers:
+// Local list of discovered/known peers.
 std::vector<Peer> Peers;
 
-// ╔════════════════════════════╗
-// ║  Generic Helpers and Init  ║
-// ╚════════════════════════════╝
-
+// InitializeSerial:
+// Ensure serial I/O is initialized (115200) for logging and debug output.
 void InitializeSerial(){
   // Initialize Serial Monitor
   if (!Serial){
@@ -66,11 +87,15 @@ void InitializeSerial(){
   }
 }
 
-// Register callbacks
+// RegisterListen:
+// Register the ESP-NOW receive callback so that OnDataReceive is invoked for incoming packets.
 void RegisterListen() {
   esp_now_register_recv_cb(OnDataReceive);
 }
 
+// InitializeESPNow:
+// Configure WiFi mode, initialize ESP-NOW, add broadcast peer and register receive callbacks.
+// Aborts on critical failures.
 void InitializeESPNow(){
   InitializeSerial();
   
@@ -91,7 +116,8 @@ void InitializeESPNow(){
   RegisterListen();
 }
 
-// Send out a discovery message
+// AnnouceMAC:
+// Broadcast a discovery message to the mesh to announce this device's presence.
 void AnnouceMAC(){
   Message message;
   message.info[0] = '\0';
@@ -102,6 +128,8 @@ void AnnouceMAC(){
   Serial.println((success) ? "Annouced successfully" : "ERR: couldn't send message");
 }
 
+// FindPeer:
+// Look up a Peer in the local Peers list by MAC address; returns optional<Peer>.
 std::optional<Peer> FindPeer(MAC source) {
   auto it = std::find_if(Peers.begin(), Peers.end(), [&](const Peer& p) {
       return p.GetMAC() == source;
@@ -114,6 +142,8 @@ std::optional<Peer> FindPeer(MAC source) {
   return std::nullopt;
 }
 
+// HandleDiscovery:
+// Handle incoming Discovery messages: add sender to local peer list and reply when appropriate.
 void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
   MAC source = GetSenderMAC(info);
 #ifdef DEBUG
@@ -144,6 +174,8 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
   }
 }
 
+// HandleSenderDiscoveryResponse:
+// Handle incoming DiscoveryResponse messages: add sender to local peer list if absent.
 void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message message) {
   MAC source = GetSenderMAC(info);
 #ifdef DEBUG
@@ -164,6 +196,8 @@ void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message 
   }
 }
 
+// HandleACK:
+// Handle incoming ACK messages: clear waitingForAck when ACK matches expected ackId.
 void HandleACK(const esp_now_recv_info* info, const Message message) {
   MAC source = GetSenderMAC(info);
 #ifdef DEBUG
@@ -178,6 +212,8 @@ void HandleACK(const esp_now_recv_info* info, const Message message) {
   }
 }
 
+// HandleText:
+// Handle incoming Text messages: send ACK back to sender if known.
 void HandleText(const esp_now_recv_info* info, const Message message) {
   MAC source = GetSenderMAC(info);
   auto source_peer = FindPeer(source);
@@ -192,6 +228,8 @@ void HandleText(const esp_now_recv_info* info, const Message message) {
   }
 }
 
+// OnDataReceive:
+// Entry point for received ESP-NOW payloads: validate size, deserialize Message and dispatch to handlers.
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) {
   if (len != sizeof(Message)){
     Serial.println("ERR: received message of different size than expected");
@@ -228,7 +266,9 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   }
 }
 
-// TODO: workout why it splits a lot
+// SendTextMessage:
+// Split a long text string into MessageSize chunks and send each chunk as a Text
+// message using SendMessageWithRetry; returns overall success.
 bool SendTextMessage(Peer receiver, String msg) {
   Message message;
   message.type = MessageType::Text;

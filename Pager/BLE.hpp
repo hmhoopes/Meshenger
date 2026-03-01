@@ -1,3 +1,20 @@
+/*
+Project: Meshenger
+Module Name: BLE.hpp
+Description:
+    BLE Nordic UART Service implementation used by pager devices.
+    Manages advertising, connection state, RX/TX characteristics,
+    and forwarding between BLE and mesh.
+Inputs:
+    - Name suffix for BLE device, byte spans from mesh or serial.
+Outputs:
+    - BLE notifications, mesh forwarding, connection callbacks.
+External Sources:
+    - BLEDevice, BLEServer, BLEUtils, BLE2902 libraries.
+Author: Team 2
+Creation Date: 02/28/2026
+*/
+
 #ifndef PAGER_BLE_HPP
 #define PAGER_BLE_HPP
 
@@ -17,14 +34,16 @@ void InitializeBLE(String aName);
 bool IsConnected();
 void SendToApp(const std::span<const std::byte> aData);
 
-//BLE constants
+//BLE constants:
+// Device name and NUS service/characteristic UUIDs used for the pager BLE service.
 #define DEVICE_NAME "Meshenger-Pager"
 #define SERVICE_UUID        "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_RX   "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_TX   "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
 #define TX_BUF_SIZE 512
 
-//BLE global variables
+// BLE global variables:
+// BLE server/characteristic pointers and connection/advertising/send flags.
 BLEServer* pServer = NULL;
 BLECharacteristic* pTxCharacteristic = NULL;
 bool deviceConnected = false;
@@ -34,6 +53,8 @@ bool sendToMesh = false;
 // Helpers
 #include "../Mesh/Helpers.hpp"
 
+// Advertise:
+// Start BLE advertising if no client is connected and advertising isn't already active.
 void Advertise(){
   if (isAdvertising || deviceConnected) {
     return;
@@ -44,6 +65,8 @@ void Advertise(){
   isAdvertising = true;
 }
 
+// ServerCallbacks::onConnect/onDisconnect:
+// BLE server callback hooks to track connection state and restart advertising on disconnect.
 class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
     deviceConnected = true;
@@ -57,6 +80,8 @@ class ServerCallbacks : public BLEServerCallbacks {
   }
 };
 
+// RxCallbacks::onWrite:
+// Handler for incoming BLE writes from the client (RX characteristic). Forwards data to mesh when enabled.
 class RxCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) {
     auto rx_val = pCharacteristic->getValue();
@@ -76,6 +101,9 @@ class RxCallbacks : public BLECharacteristicCallbacks {
   }
 };
 
+// InitializeBLE:
+// Initialize the BLE stack, create the NUS service and RX/TX characteristics,
+// set callbacks, and start advertising with the provided name suffix.
 void InitializeBLE(String aName){
   InitializeSerial();
   
@@ -112,10 +140,15 @@ void InitializeBLE(String aName){
   Serial.println("Advertising as \"" DEVICE_NAME "\"");
 }
 
+// IsConnected:
+// Return true if a BLE client is currently connected to the pager.
 bool IsConnected() {return deviceConnected; }
 
 //TODO: workout why it prints weird sometimes
 //Note: message won't be sent if not connected
+// SendToApp:
+// Send raw byte data to the connected BLE client via notifications,
+// chunking the payload to TX_BUF_SIZE and flushing on newline.
 void SendToApp(const std::span<const std::byte> aData){
   Serial.println("sending to app...");
   // Buffer for data to send to the connected client (e.g. from Serial or mesh later)

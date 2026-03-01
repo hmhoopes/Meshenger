@@ -1,12 +1,19 @@
 /*
- * Pager BLE serial bridge - Nordic UART Service (NUS).
- * Use with the Meshenger web app: connect via Web Bluetooth to send/receive messages.
- *
- * NUS UUIDs (same as web app):
- *   Service:  6E400001-B5A3-F393-E0A9-E50E24DCCA9E
- *   RX (write from client): 6E400002-B5A3-F393-E0A9-E50E24DCCA9E
- *   TX (notify to client):  6E400003-B5A3-F393-E0A9-E50E24DCCA9E
- */
+Project: Meshenger
+Module Name: ble_serial.ino
+Description:
+    Simple BLE serial bridge using NUS service; forwards data from
+    the serial console to a connected BLE client.
+Inputs:
+    - Serial input characters.
+Outputs:
+    - BLE notifications carrying the input data.
+External Sources:
+    - BLE.hpp
+Author: Team 2
+Creation Date: 02/26/2026
+*/
+
 // Custom Libraries
 #include "../BLE.hpp"
 
@@ -14,10 +21,14 @@
 #include <string>
 #include <span>
 
+// setup:
+// Initialize BLE with a test suffix for the device name.
 void setup() {
   InitializeBLE("Test");
 }
 
+// loop:
+// Forward serial input to connected BLE client.
 void loop() {
   if (Serial.available() && IsConnected()){
     String input = Serial.readString();
