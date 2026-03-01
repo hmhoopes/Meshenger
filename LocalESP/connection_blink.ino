@@ -10,7 +10,7 @@ Outputs:
     - Sends and receives data over Bluetooth Serial
     - LED blinks to indicate activity (startup and message receive)
 External Sources:
-    - esp_now documentation, Medium
+    - esp32 documentation, Medium
 Author: Team 2
 Creation Date: 02/19/2026
 */
