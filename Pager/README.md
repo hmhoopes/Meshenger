@@ -15,3 +15,7 @@ ESP32 device paired with the Meshenger app. Two options:
 - Serial bridge over **Classic Bluetooth SPP**. Pairs with phones/PCs as a serial device; not usable from the browser Web Bluetooth API.
 
 For the **web application** interface, use **BLE** and the `ble_serial` sketch.
+
+## 2. Building Pager Ino
+- Ensure `Tools -> Partition Scheme` is set to `Huge APP (3MB No OTA/1MB SPIFFS)`
+ 

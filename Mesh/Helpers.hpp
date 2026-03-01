@@ -32,9 +32,15 @@ std::vector<Peer> Peers;
 // ║  Generic Helpers and Init  ║
 // ╚════════════════════════════╝
 
-void InitializeESPNow(){
+void InitializeSerial(){
   // Initialize Serial Monitor
-  Serial.begin(115200);
+  if (!Serial){
+    Serial.begin(115200);
+  }
+}
+
+void InitializeESPNow(){
+  InitializeSerial();
   
   // Set device as a Wi-Fi Station
   WiFi.mode(WIFI_STA);
