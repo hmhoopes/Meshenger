@@ -17,9 +17,6 @@ void InitializeBLE(String aName);
 bool IsConnected();
 void SendToApp(const std::span<const std::byte> aData);
 
-// Helpers
-#include "../Mesh/Helpers.hpp"
-
 //BLE constants
 #define DEVICE_NAME "Meshenger-Pager"
 #define SERVICE_UUID        "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
@@ -33,6 +30,9 @@ BLECharacteristic* pTxCharacteristic = NULL;
 bool deviceConnected = false;
 bool isAdvertising = false;
 bool sendToMesh = false;
+
+// Helpers
+#include "../Mesh/Helpers.hpp"
 
 void Advertise(){
   if (isAdvertising || deviceConnected) {

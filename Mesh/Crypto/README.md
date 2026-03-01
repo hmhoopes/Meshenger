@@ -21,8 +21,6 @@
 4. User A recieves User B's certificate
     - User A calls `dh2(k, f)` with B's public key as first argument and A's private key `f` as second
 5. Now, User A can encrypt any traffic to B with shared secret
-    - TODO: how should traffic from this be encrypted?
-    - TODO: 
 
 ## TLS-style (forward secret and auth !!)
 - **What will be used**

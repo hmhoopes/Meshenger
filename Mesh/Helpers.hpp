@@ -20,6 +20,7 @@
 #include "Peer.hpp"
 
 // forward decls
+void SetPagerMode();
 void InitializeSerial();
 void RegisterListen();
 void InitializeESPNow();
@@ -39,9 +40,14 @@ void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData,
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 //================================================================================================
 
-// TODO: implement better way of doing this
 // Used to indicate if device is pager or not
-bool isPager = true;
+bool isPager = false;
+
+// function to initialize global vars in a way that this ESP32 will operate as a pager
+void SetPagerMode(){
+  isPager = true;
+  sendToMesh = true;
+}
 
 // Broadcast MAC is a way to send messages to all devices.
 //   This does not change across all devices
@@ -199,7 +205,7 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
     //TODO: improve the format sent to end user
     Serial.println("receiving message...");
     auto str = message.to_string();
-    SendToApp(std::as_bytes(std::span<char>(str.data(), str.size())));
+    SendToApp(std::as_bytes(std::span<char>(message.info, MessageSize)));
   }
 
   switch (message.type){
