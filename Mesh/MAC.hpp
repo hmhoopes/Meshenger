@@ -20,9 +20,25 @@ class MAC {
 
     uint8_t* GetAddressArray() {return addr.data();}
 
+    String to_arduinostr(){
+      String ret;
+      ret = String(addr[0], HEX);
+      ret = ret + ":";
+      ret = ret + String(addr[1], HEX);
+      ret = ret + ":";
+      ret = ret + String(addr[2], HEX);
+      ret = ret + ":";
+      ret = ret + String(addr[3], HEX);
+      ret = ret + ":";
+      ret = ret + String(addr[4], HEX);
+      ret = ret + ":";
+      ret = ret + String(addr[5], HEX);
+      return ret;
+    }
+
     std::string to_string(){
       char buf[100];
-      sprintf(buf, "%02x:%02x:%02x:%02x:%02x:%02x\n",
+      sprintf(buf, "%02x:%02x:%02x:%02x:%02x:%02x",
                     addr[0], addr[1], addr[2],
                     addr[3], addr[4], addr[5]);
       return std::string(buf);

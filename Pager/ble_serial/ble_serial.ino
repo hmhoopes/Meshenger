@@ -15,7 +15,7 @@
 #include <span>
 
 void setup() {
-  InitializeBLE();
+  InitializeBLE("Test");
 }
 
 void loop() {

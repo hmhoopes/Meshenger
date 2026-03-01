@@ -1,10 +1,6 @@
 #ifndef MESH_HELPERS_HPP
 #define MESH_HELPERS_HPP 
 
-#include "MAC.hpp"
-#include "Message.hpp"
-#include "Peer.hpp"
-
 // WiFi & ESP Headers
 #include <esp_wifi.h>
 #include <esp_now.h>
@@ -16,11 +12,36 @@
 #include <algorithm>
 #include <optional>
 #include <assert.h>
+#include <span>
+
+// Helper files
+#include "MAC.hpp"
+#include "Message.hpp"
+#include "Peer.hpp"
+
+// forward decls
+void InitializeSerial();
+void RegisterListen();
+void InitializeESPNow();
+void AnnouceMAC();
+std::optional<Peer> FindPeer(MAC source);
+void HandleDiscovery(const esp_now_recv_info* info, const Message message) ;
+void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message message) ;
+void HandleACK(const esp_now_recv_info* info, const Message message) ;
+void HandleText(const esp_now_recv_info* info, const Message message) ;
+void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) ;
+bool SendTextMessage(Peer receiver, String msg) ;
+
+#include "../Pager/BLE.hpp"
 
 //================================== Forward Decls ===============================================
 void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 //================================================================================================
+
+// TODO: implement better way of doing this
+// Used to indicate if device is pager or not
+bool isPager = true;
 
 // Broadcast MAC is a way to send messages to all devices.
 //   This does not change across all devices
@@ -39,6 +60,11 @@ void InitializeSerial(){
   }
 }
 
+// Register callbacks
+void RegisterListen() {
+  esp_now_register_recv_cb(OnDataReceive);
+}
+
 void InitializeESPNow(){
   InitializeSerial();
   
@@ -55,11 +81,8 @@ void InitializeESPNow(){
     Serial.println("ERR: Failed to add broadcast as peer");
     assert(false);
   }
-}
 
-// Register callbacks
-void RegisterListen() {
-  esp_now_register_recv_cb(OnDataReceive);
+  RegisterListen();
 }
 
 // Send out a discovery message
@@ -172,6 +195,13 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   Message message;
   memcpy(&message, incomingData, sizeof(Message));
 
+  if (isPager){
+    //TODO: improve the format sent to end user
+    Serial.println("receiving message...");
+    auto str = message.to_string();
+    SendToApp(std::as_bytes(std::span<char>(str.data(), str.size())));
+  }
+
   switch (message.type){
     case MessageType::ACK:
       HandleACK(info, message);
@@ -192,7 +222,7 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   }
 }
 
-
+// TODO: workout why it splits a lot
 bool SendTextMessage(Peer receiver, String msg) {
   Message message;
   message.type = MessageType::Text;

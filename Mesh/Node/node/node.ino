@@ -2,7 +2,6 @@
 
 void setup() {
   InitializeESPNow();
-  RegisterListen();
 }
 
 void loop() {

@@ -1,14 +1,24 @@
+#ifndef PAGER_BLE_HPP
+#define PAGER_BLE_HPP
+
 // BLE headers
 #include <BLEDevice.h>
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
 
-// Helpers
-#include "../Mesh/Helpers.hpp"
-
 //utility headers
 #include <span>
+#include <string>
+
+//forward decls
+void Advertise();
+void InitializeBLE(String aName);
+bool IsConnected();
+void SendToApp(const std::span<const std::byte> aData);
+
+// Helpers
+#include "../Mesh/Helpers.hpp"
 
 //BLE constants
 #define DEVICE_NAME "Meshenger-Pager"
@@ -49,27 +59,30 @@ class ServerCallbacks : public BLEServerCallbacks {
 
 class RxCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) {
-    if (sendToMesh){
-      // implement
-    } else {
-      std::string rx = std::string(pCharacteristic->getValue().c_str());
-      if (rx.length() > 0) {
-        Serial.print("[BLE RX] ");
-        for (size_t i = 0; i < rx.length(); i++) {
-          Serial.print((char)rx[i]);
-        }
+    auto rx_val = pCharacteristic->getValue();
+    std::string rx = std::string(rx_val.c_str());
+    if (rx.length() > 0) {
+      Serial.print("[BLE RX] ");
+      for (size_t i = 0; i < rx.length(); i++) {
+        Serial.print((char)rx[i]);
       }
-    }     
+    } 
+
+    if(sendToMesh) {
+      // TODO: workout how to do this asyncronoushly / update text sent
+      Serial.println("sending text...");
+      SendTextMessage(BroadcastPeer, rx_val);
+    }
   }
 };
 
-void InitializeBLE(){
+void InitializeBLE(String aName){
   InitializeSerial();
   
   Serial.println("Meshenger Pager - BLE NUS");
   Serial.println("Connect with the web app (Chrome) or any NUS client.");
 
-  BLEDevice::init(DEVICE_NAME);
+  BLEDevice::init(DEVICE_NAME + aName);
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
 
@@ -85,6 +98,7 @@ void InitializeBLE(){
     CHARACTERISTIC_RX,
     BLECharacteristic::PROPERTY_WRITE
   );
+
   pRxCharacteristic->setCallbacks(new RxCallbacks());
 
   pService->start();
@@ -100,8 +114,10 @@ void InitializeBLE(){
 
 bool IsConnected() {return deviceConnected; }
 
+//TODO: workout why it prints weird sometimes
 //Note: message won't be sent if not connected
 void SendToApp(const std::span<const std::byte> aData){
+  Serial.println("sending to app...");
   // Buffer for data to send to the connected client (e.g. from Serial or mesh later)
   uint8_t txBuf[TX_BUF_SIZE];
   int txLen = 0;
@@ -121,3 +137,5 @@ void SendToApp(const std::span<const std::byte> aData){
     txLen = 0;
   }
 }
+
+#endif
