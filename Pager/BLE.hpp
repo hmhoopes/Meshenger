@@ -34,7 +34,7 @@ void InitializeBLE(String aName);
 bool IsConnected();
 void SendToApp(const std::span<const std::byte> aData);
 
-//BLE constants:
+// BLE constants:
 // Device name and NUS service/characteristic UUIDs used for the pager BLE service.
 #define DEVICE_NAME "Meshenger-Pager"
 #define SERVICE_UUID        "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"

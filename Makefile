@@ -1,17 +1,30 @@
-# Makefile
-FQBN     = esp32:esp32:esp32
-PORT     ?= /dev/ttyUSB0
-BAUD     ?= 115200
-NODE_DIR = Mesh/Node/node
-ESP_DIR  = Pager
+# Author: Aniketh Aatipamula
+# Inputs: Commands to execute
+# Outputs: Builds for ESP32 Boards
+# Date Created: Feb 25, 2026
+
+# NOTE: Variables created with '?=' can be set from the command line
+#       e.g. 'make flash PORT=/dev/ttyUSB1 BUILD_DIR=./Pager'
+
+PARTITION ?= huge_app
+FQBN      =  esp32:esp32:esp32:PartitionScheme=$(PARTITION)
+PORT      ?= /dev/ttyUSB0
+BAUD      ?= 115200
+
+BUILD_DIR ?= ./Mesh/Node/node
 
 .PHONY: build upload monitor lsp-index
 
 build:
-	arduino-cli compile --fqbn $(FQBN) $(NODE_DIR)
+	arduino-cli compile --fqbn $(FQBN) \
+		--build-path $(BUILD_DIR)/build \
+		$(BUILD_DIR)
+
+	# Simlink compile_commands to top level dir
+	ln -sf $(NODE_DIR)/build/compile_commands.json .
 
 upload: build
-	arduino-cli upload --fqbn $(FQBN) --port $(PORT) $(NODE_DIR)
+	arduino-cli upload --fqbn $(FQBN) --port $(PORT) $(BUILD_DIR)
 
 monitor:
 	arduino-cli monitor --port $(PORT) --config baudrate=$(BAUD)
@@ -20,4 +33,9 @@ flash: upload monitor
 
 # Regenerate LSP compile_commands.json
 lsp-index:
-	bear -- arduino-cli compile --fqbn $(FQBN) $(NODE_DIR)
+	arduino-cli compile --fqbn $(FQBN) \
+		--build-path $(BUILD_DIR)/build --only-compilation-database \
+		$(BUILD_DIR)
+
+	# Simlink compile_commands to top level dir
+	ln -sf $(BUILD_DIR)/build/compile_commands.json .

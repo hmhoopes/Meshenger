@@ -1,0 +1,5 @@
+# Ignore arduino build folders
+build/
+
+# Clang compile commands file
+compile_commands.json
