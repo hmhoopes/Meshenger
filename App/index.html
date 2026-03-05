@@ -75,7 +75,7 @@
       box-shadow: 0 0 8px var(--accent);
     }
 
-    /* Main content: scrollable messages + compose area */
+    /* Main content: container for different views (Peers / Messages / Settings) */
     main {
       flex: 1;
       display: flex;
@@ -84,6 +84,69 @@
       margin: 0 auto;
       width: 100%;
       padding: 0 1rem;
+    }
+
+    /* Top-level nav for Peers / Messages / Settings */
+    .main-nav {
+      display: flex;
+      gap: 0.5rem;
+      padding: 0.5rem 1.25rem;
+      border-bottom: 1px solid var(--border);
+      background: #11151b;
+    }
+
+    .nav-item {
+      padding: 0.35rem 0.9rem;
+      font-size: 0.85rem;
+      background: transparent;
+      color: var(--text-muted);
+      border-radius: 999px;
+      border: 1px solid transparent;
+    }
+
+    .nav-item.nav-item-active {
+      color: var(--text);
+      border-color: var(--accent);
+      background: rgba(63, 185, 80, 0.15);
+    }
+
+    /* Section containers – only one is visible at a time */
+    .view {
+      display: none;
+    }
+
+    .view-active {
+      display: block;
+    }
+
+    .section-title {
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-top: 0.75rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .peers-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+
+    .peers-list button {
+      width: 100%;
+      text-align: left;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 0.5rem 0.75rem;
+      font-size: 0.85rem;
+    }
+
+    .peers-list button.active {
+      border-color: var(--accent);
     }
 
     /* Scrollable list of message bubbles */
@@ -247,21 +310,51 @@
     </div>
   </header>
 
-  <main>
-    <div id="messages"></div>
-    <!-- Shown when no messages; hidden as soon as first message is appended -->
-    <div class="empty-state" id="emptyState">
-      <strong>No messages yet</strong>
-      <p>Connect to your LocalESP device to send and receive messages over the mesh.</p>
-    </div>
+  <!-- Main navigation: Peers / Messages / Settings -->
+  <nav class="main-nav">
+    <button class="nav-item nav-item-active" data-section="peers">Peers</button>
+    <button class="nav-item" data-section="messages">Messages</button>
+    <button class="nav-item" data-section="settings">Settings</button>
+  </nav>
 
-    <!-- Input + Send; has class "disabled" until BLE connected -->
-    <div class="compose disabled" id="compose">
-      <form id="form" submit="return false;">
-        <input type="text" id="input" placeholder="Type a message…" disabled autocomplete="off">
-        <button type="submit" id="btnSend" disabled>Send</button>
-      </form>
-    </div>
+  <main>
+    <!-- Peers view: list of known peers to open a dedicated chat window -->
+    <section id="view-peers" class="view view-active">
+      <h2 class="section-title">Peers</h2>
+      <ul id="peersList" class="peers-list"></ul>
+    </section>
+
+    <!-- Messages view: chat window for the selected peer -->
+    <section id="view-messages" class="view">
+      <h2 class="section-title" id="chatPeerLabel">No peer selected</h2>
+      <div id="messages"></div>
+      <!-- Shown when no messages; hidden as soon as first message is appended -->
+      <div class="empty-state" id="emptyState">
+        <strong>No messages yet</strong>
+        <p>Connect to your LocalESP device to send and receive messages over the mesh.</p>
+      </div>
+
+      <!-- Input + Send; has class "disabled" until BLE connected -->
+      <div class="compose disabled" id="compose">
+        <form id="form" submit="return false;">
+          <input type="text" id="input" placeholder="Type a message…" disabled autocomplete="off">
+          <button type="submit" id="btnSend" disabled>Send</button>
+        </form>
+      </div>
+    </section>
+
+    <!-- Settings view: notification sound + brightness toggles -->
+    <section id="view-settings" class="view">
+      <h2 class="section-title">Settings</h2>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.9rem;margin-bottom:0.5rem;">
+        <input type="checkbox" id="settingSounds" checked>
+        Notification sounds
+      </label>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.9rem;">
+        <input type="checkbox" id="settingBrightness" checked>
+        High display brightness
+      </label>
+    </section>
   </main>
 
   <!-- Footer: connect button + data path label -->
@@ -287,6 +380,21 @@
     const btnSend = document.getElementById('btnSend');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
+    const navButtons = document.querySelectorAll('.nav-item');
+    const peersListEl = document.getElementById('peersList');
+    const peersView = document.getElementById('view-peers');
+    const messagesView = document.getElementById('view-messages');
+    const settingsView = document.getElementById('view-settings');
+    const chatPeerLabel = document.getElementById('chatPeerLabel');
+    const settingSounds = document.getElementById('settingSounds');
+    const settingBrightness = document.getElementById('settingBrightness');
+
+    // Simple, static peer list for now
+    const peers = [
+      { id: 'peer1', name: 'Node 1' },
+      { id: 'peer2', name: 'Node 2' },
+      { id: 'peer3', name: 'Node 3' },
+    ];
 
     // BLE connection state
     let device = null;
@@ -294,6 +402,47 @@
     let rxChar = null;
     let txChar = null;
     let rxBuffer = '';  // buffer incomplete lines from TX notifications (split on \n)
+
+    // UI state
+    let currentSection = 'peers';
+    let currentPeerId = null;
+
+    /** Switch between Peers, Messages, and Settings sections */
+    function setSection(section) {
+      currentSection = section;
+      navButtons.forEach(btn => {
+        btn.classList.toggle('nav-item-active', btn.dataset.section === section);
+      });
+      peersView.classList.toggle('view-active', section === 'peers');
+      messagesView.classList.toggle('view-active', section === 'messages');
+      settingsView.classList.toggle('view-active', section === 'settings');
+    }
+
+    /** Populate the peers list in the Peers view */
+    function renderPeers() {
+      peersListEl.innerHTML = '';
+      peers.forEach(peer => {
+        const li = document.createElement('li');
+        const btn = document.createElement('button');
+        btn.textContent = peer.name;
+        btn.addEventListener('click', () => selectPeer(peer.id));
+        li.appendChild(btn);
+        peersListEl.appendChild(li);
+      });
+    }
+
+    /** Handle peer selection and open its chat window */
+    function selectPeer(peerId) {
+      currentPeerId = peerId;
+      const peer = peers.find(p => p.id === peerId);
+      chatPeerLabel.textContent = peer ? `Chat with ${peer.name}` : 'Chat';
+      // Highlight active peer
+      const buttons = peersListEl.querySelectorAll('button');
+      buttons.forEach(btn => {
+        btn.classList.toggle('active', btn.textContent === (peer && peer.name));
+      });
+      setSection('messages');
+    }
 
     // --- Connection & UI helpers ---
     /** Update UI and input state when BLE connection changes */
@@ -398,6 +547,18 @@
       sendMessage(t);
       input.value = '';
     });
+
+    // Nav buttons: switch between Peers / Messages / Settings
+    navButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const section = btn.dataset.section;
+        setSection(section);
+      });
+    });
+
+    // Initial render
+    renderPeers();
+    setSection('peers');
   </script>
 </body>
 </html>
