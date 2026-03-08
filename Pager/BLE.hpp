@@ -156,7 +156,7 @@ void SendToApp(const std::span<const std::byte> aData){
   int txLen = 0;
   int dataLen = 0;
   // Send any pending data from Serial to the BLE client (for future: mesh -> BLE)
-  while (deviceConnected && txLen < aData.size()) {
+  while (deviceConnected && dataLen < (int)aData.size()) {
     txBuf[txLen++] = (uint8_t)aData[dataLen++];
     if (txLen >= TX_BUF_SIZE || txBuf[txLen - 1] == '\n') {
       pTxCharacteristic->setValue(txBuf, txLen);

@@ -239,11 +239,11 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   Message message;
   memcpy(&message, incomingData, sizeof(Message));
 
-  if (isPager){
+  if (isPager && message.type == MessageType::Text){
     //TODO: improve the format sent to end user
     Serial.println("receiving message...");
-    auto str = message.to_string();
-    SendToApp(std::as_bytes(std::span<char>(message.info, MessageSize)));
+    size_t len = strnlen(message.info, MessageSize);
+    SendToApp(std::as_bytes(std::span<char>(message.info, len)));
   }
 
   switch (message.type){
