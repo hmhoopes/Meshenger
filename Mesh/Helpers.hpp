@@ -50,7 +50,7 @@ void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message 
 void HandleACK(const esp_now_recv_info* info, const Message message) ;
 void HandleText(const esp_now_recv_info* info, const Message message) ;
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) ;
-bool SendTextMessage(Peer receiver, String msg) ;
+bool SendTextMessage(MAC receiver, String msg) ;
 extern Peer BroadcastPeer;
 
 #include "../Pager/BLE.hpp"
@@ -252,7 +252,13 @@ void HandleText(const esp_now_recv_info* info, const Message message) {
     //TODO: improve the format sent to end user
     Serial.println("receiving message...");
     size_t len = strnlen(message.info, MessageSize);
-    SendToApp(std::as_bytes(std::span<const char>(message.info, len)));
+    std::string text(message.info, len);
+    std::string sourceStr = source.to_string();
+    std::string ret = 'm' + sourceStr + text;
+    
+    Serial.print("Forwarding to app: ");
+    Serial.println(ret.c_str());
+    SendToApp(std::as_bytes(std::span<char>(reinterpret_cast<char *>(ret.data()), ret.size())));
   }
 }
 
@@ -290,7 +296,25 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
 // SendTextMessage:
 // Split a long text string into MessageSize chunks and send each chunk as a Text
 // message using SendMessageWithRetry; returns overall success.
-bool SendTextMessage(Peer receiver, String msg) {
+bool SendTextMessage(MAC receiver, String msg) {
+  Peer targetPeer = Peer(MAC(std::vector<uint8_t>{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}));
+  auto found = false;
+  for (const Peer& peer : Peers) {
+    if (peer.GetMAC() == receiver) {
+      targetPeer = peer;
+      found = true;
+      break;
+    }
+  }
+
+  if (!found) {
+    // todo: update message to include target, set that target to this, and update message handling to read message (won't be relying on targetted)
+    Serial.print("Target peer");
+    Serial.print(receiver.to_cstr());
+    Serial.println("not found in peer list");
+    return false;
+  }
+
   Message message;
   message.type = MessageType::Text;
   bool success = true;
@@ -304,7 +328,7 @@ bool SendTextMessage(Peer receiver, String msg) {
 #ifdef DEBUG
     Serial.println("DBG: Sending message");
 #endif
-    success = SendMessageWithRetry(receiver, message) && success;
+    success = SendMessageWithRetry(targetPeer, message) && success;
     if (!success) {
       Serial.println("ERR: Failed to send text message.");
     }

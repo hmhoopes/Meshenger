@@ -94,38 +94,95 @@ static void SerialPrintPrintable(const uint8_t* data, size_t len) {
   }
 }
 
+String messageToSend;
+bool messagePending = false;
+MAC targetMAC = MAC(std::vector<uint8_t>{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF});
+
+void ResetMessage(){
+  messageToSend = "";
+  messagePending = false;
+  MAC targetMAC = MAC(std::vector<uint8_t>{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF});
+}
+
+void SendMessage(){
+  SendTextMessage(targetMAC, messageToSend);
+  ResetMessage();
+}
+
 // RxCallbacks::onWrite:
 // Handler for incoming BLE writes from the client (RX characteristic). Forwards data to mesh when enabled.
 class RxCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) {
-  auto rx_val = pCharacteristic->getValue();
-  std::string rx = std::string(rx_val.c_str());
-	if (rx.empty()) {
-      return;
+    auto rx_val = pCharacteristic->getValue();
+    std::string rx = std::string(rx_val.c_str());
+    Serial.print("[RX] Received from app: ");
+    Serial.println(rx.c_str());
+    if (rx.empty()) {
+        return;
     }
-	
-	if (rx[0] == 'm') {
-    // Message from app to send to mesh
-    rx = rx.substr(1);  // Remove message type prefix
-    size_t len = rx_val.length();
-    if (len > 0) {
-      const uint8_t* p = reinterpret_cast<const uint8_t*>(rx_val.c_str());
-      Serial.print("[RX] ");
-      SerialPrintPrintable(p, len);
-      Serial.println();
-    }
+    
+    if (rx[0] == 'm') {
+      // Message from app to send to mesh
+      rx = rx.substr(1);  // Remove message type prefix
+      messagePending = true;
 
-    if(sendToMesh) {
-      Serial.println("[MESH] Sending text to mesh...");
-      rx_val.remove(0,1);  // Remove the 'm' prefix before sending
-		  SendTextMessage(BroadcastPeer, String(rx_val.c_str()));
-	    }
+      size_t len = rx_val.length();
+      if (len > 0) {
+        const uint8_t* p = reinterpret_cast<const uint8_t*>(rx_val.c_str());
+        Serial.print("[RX] ");
+        SerialPrintPrintable(p, len);
+        Serial.println();
+      }
+
+      if(sendToMesh) {
+        Serial.println("[MESH] Sending text to mesh...");
+        rx_val.remove(0,1);  // Remove the 'm' prefix before sending
+        static constexpr auto targetPeerSize = 17;
+
+        if (rx_val.length() < targetPeerSize) {
+          Serial.println("ERR: Received message too short to contain target peer MAC");
+          return;
+        } else {
+          String targetPeerStr = rx_val.substring(0, targetPeerSize);
+          MAC tempMac(std::vector<uint8_t>{
+            (uint8_t)strtoul(targetPeerStr.substring(0, 2).c_str(), nullptr, 16),
+            (uint8_t)strtoul(targetPeerStr.substring(3, 5).c_str(), nullptr, 16),
+            (uint8_t)strtoul(targetPeerStr.substring(6, 8).c_str(), nullptr, 16),
+            (uint8_t)strtoul(targetPeerStr.substring(9, 11).c_str(), nullptr, 16),
+            (uint8_t)strtoul(targetPeerStr.substring(12, 14).c_str(), nullptr, 16),
+            (uint8_t)strtoul(targetPeerStr.substring(15, 17).c_str(), nullptr, 16)
+          });
+          Serial.print("Parsed temp MAC: ");
+          Serial.println(tempMac.to_cstr());
+          targetMAC = tempMac;
+          Serial.print("Parsed target MAC: ");
+          Serial.println(targetMAC.to_cstr());
+        }
+        auto text = rx_val.substring(targetPeerSize);
+        auto idx = text.indexOf(0x03);
+        if (idx != -1){
+          text = text.substring(0, idx); // Remove the delimiter from the text
+          messageToSend += text;
+          SendMessage();
+        }
+        messageToSend += text;
+        }
     } else if (rx[0] == 'l') {
       // Command from app to list peers
       rx = "";  // No additional data needed
+      Peer targetPeer = Peer(MAC(std::vector<uint8_t>{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}));
       SendToApp(PeersJSON());
+    } else if (messagePending){
+      auto idx = rx_val.indexOf(0x03);
+      if (idx != -1){
+        rx_val = rx_val.substring(0, idx); // Remove the delimiter from the text
+        messageToSend += rx_val;
+        SendMessage();
+      } else {
+        messageToSend += rx_val;
+      }
     } else {
-      Serial.println("ERR: Received unknown command from BLE client");
+        Serial.println("ERR: Received unknown command from BLE client");
     }
   }
 };

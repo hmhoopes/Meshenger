@@ -22,13 +22,10 @@ Creation Date: 02/28/2026
 
 /*
 TODO:
-  - fix SendTextMessage repeating (Aniketh)
-    - attempting to get ack
-  - workout why SendToApp sends junk bytes sometimes (Shero & Yaeesh)
   - workout how to send to mesh asynchronously (do in later sprint)
-  - add target selection (do in later sprint)
   - add node propagation (do in later sprint)
     - add queue of message hashes?
+    - use unique id to differentiate repeated messages 
     - drop if seen before, otherwise broadcast
 */
 
