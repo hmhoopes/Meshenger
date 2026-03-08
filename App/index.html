@@ -402,6 +402,7 @@
     let rxChar = null;
     let txChar = null;
     let rxBuffer = '';  // buffer incomplete lines from TX notifications (split on \n)
+    let sending = false;  // prevent double-send and duplicate UI messages
 
     // UI state
     let currentSection = 'peers';
@@ -474,6 +475,18 @@
       return div.innerHTML;
     }
 
+    /** Return true if string looks like displayable text (not garbage/binary from BLE) */
+    function isDisplayableText(s) {
+      if (!s || s.length > 1024) return false;
+      let printable = 0;
+      for (let i = 0; i < s.length; i++) {
+        const c = s.charCodeAt(i);
+        if (c === 0xFFFD) return false;
+        if ((c >= 0x20 && c <= 0x7E) || c === 9 || c === 10 || c === 13) printable++;
+      }
+      return printable >= Math.min(s.length, 1);
+    }
+
     /** Connect to LocalESP over BLE (or disconnect if already connected) */
     async function connect() {
       // If already connected, disconnect and bail
@@ -487,9 +500,13 @@
       }
 
       try {
-        // 1) Show browser's BLE device picker; only devices advertising NUS will appear
+        // 1) Show browser's BLE device picker.
+        //    Filter by NUS service; fallback to name prefix so "Meshenger-Pager" / "Meshenger-PagerTest" shows.
         device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: [NUS_SERVICE] }],
+          filters: [
+            { services: [NUS_SERVICE] },
+            { namePrefix: 'Meshenger' }
+          ],
           optionalServices: [NUS_SERVICE]
         });
 
@@ -503,14 +520,22 @@
         rxChar = await service.getCharacteristic(NUS_RX);
 
         // 4) Subscribe to TX – we get notified when ESP32 sends data
-        // Incoming data from ESP32: buffer and show each line as a received message
+        rxBuffer = '';
         await txChar.startNotifications();
         txChar.addEventListener('characteristicvaluechanged', (e) => {
-          const decoder = new TextDecoder();
-          rxBuffer += decoder.decode(e.target.value);
-          const lines = rxBuffer.split('\n');
-          rxBuffer = lines.pop() || '';  // keep incomplete line for next chunk
-          lines.forEach(line => { if (line.trim()) appendMessage(line.trim(), false); });
+          const value = e.target.value;
+          if (!value || value.byteLength === 0) return;
+          let decoded;
+          try {
+            decoded = new TextDecoder('utf-8', { fatal: false }).decode(value);
+          } catch (_) { return; }
+          rxBuffer += decoded;
+          const lines = rxBuffer.split(/\r?\n/);
+          rxBuffer = lines.pop() || '';
+          lines.forEach(line => {
+            const trimmed = line.trim();
+            if (trimmed && isDisplayableText(trimmed)) appendMessage(trimmed, false);
+          });
         });
 
         // If ESP32 disconnects (e.g. power off), update UI
@@ -527,14 +552,22 @@
 
     /** Send text to ESP32 via NUS RX characteristic (chunked for BLE MTU) */
     async function sendMessage(text) {
-      if (!rxChar || !text.trim()) return;
-      const encoder = new TextEncoder();
-      const data = encoder.encode(text.trim() + '\n');
-      const chunk = 20;  // BLE typical MTU limit
-      for (let i = 0; i < data.length; i += chunk) {
-        await rxChar.writeValue(data.slice(i, i + chunk));
+      const trimmed = text.trim();
+      if (!rxChar || !trimmed || sending) return;
+      sending = true;
+      btnSend.disabled = true;
+      try {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(trimmed + '\n');
+        const chunk = 20;
+        for (let i = 0; i < data.length; i += chunk) {
+          await rxChar.writeValue(data.slice(i, i + chunk));
+        }
+        appendMessage(trimmed, true);
+      } finally {
+        sending = false;
+        btnSend.disabled = !device || !server || !server.connected;
       }
-      appendMessage(text.trim(), true);  // show in UI as sent
     }
 
     // --- Event listeners ---
@@ -543,7 +576,7 @@
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       const t = input.value;
-      if (!t.trim()) return;
+      if (!t.trim() || sending) return;
       sendMessage(t);
       input.value = '';
     });

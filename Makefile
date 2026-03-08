@@ -1,5 +1,6 @@
 # Makefile
-FQBN     = esp32:esp32:esp32
+# PartitionScheme=huge_app gives ~3MB app partition so BLE+WiFi+mesh sketch fits (default is ~1.3MB)
+FQBN     = esp32:esp32:esp32:PartitionScheme=huge_app
 PORT     ?= /dev/ttyUSB0
 BAUD     ?= 115200
 NODE_DIR = Mesh/Node/node
