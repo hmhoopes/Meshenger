@@ -27,6 +27,20 @@ Creation Date: 02/28/2026
 //utility headers
 #include <span>
 #include <string>
+#include <vector>
+
+// Mesh types and externs when built with Mesh (Node); stubs when Pager builds standalone.
+#include "../Mesh/Peer.hpp"
+#ifdef PAGER_BLE_STANDALONE
+// Stubs so Pager/ble_serial.ino builds without Mesh/Helpers.hpp
+void InitializeSerial() { if (!Serial) Serial.begin(115200); }
+static MAC _broadcastMAC = MAC(std::vector<uint8_t>{0xFF,0xFF,0xFF,0xFF,0xFF,0xFF});
+Peer BroadcastPeer = Peer(_broadcastMAC);
+bool SendTextMessage(Peer receiver, String msg) { (void)receiver; (void)msg; return true; }
+#else
+extern Peer BroadcastPeer;
+bool SendTextMessage(Peer receiver, String msg);
+#endif
 
 //forward decls
 void Advertise();
@@ -50,9 +64,6 @@ bool deviceConnected = false;
 bool isAdvertising = false;
 bool sendToMesh = false;
 
-// Helpers
-#include "../Mesh/Helpers.hpp"
-
 // Advertise:
 // Start BLE advertising if no client is connected and advertising isn't already active.
 void Advertise(){
@@ -61,7 +72,7 @@ void Advertise(){
   }
 
   pServer->startAdvertising();
-  Serial.println("Advertising restarted");
+  Serial.println("[BLE] Advertising restarted");
   isAdvertising = true;
 }
 
@@ -71,32 +82,41 @@ class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
     deviceConnected = true;
     isAdvertising = false;
-    Serial.println("BLE client connected");
+    Serial.println();
+    Serial.println("[BLE] Client connected");
   }
   void onDisconnect(BLEServer* pServer) {
     deviceConnected = false;
     Advertise();
-    Serial.println("BLE client disconnected");
+    Serial.println("[BLE] Client disconnected");
   }
 };
+
+// Helper: print only printable ASCII to Serial (avoids garbage from binary/control chars).
+static void SerialPrintPrintable(const uint8_t* data, size_t len) {
+  for (size_t i = 0; i < len; i++) {
+    uint8_t c = data[i];
+    if (c >= 0x20 && c <= 0x7E || c == '\t' || c == '\n' || c == '\r')
+      Serial.print((char)c);
+  }
+}
 
 // RxCallbacks::onWrite:
 // Handler for incoming BLE writes from the client (RX characteristic). Forwards data to mesh when enabled.
 class RxCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) {
     auto rx_val = pCharacteristic->getValue();
-    std::string rx = std::string(rx_val.c_str());
-    if (rx.length() > 0) {
-      Serial.print("[BLE RX] ");
-      for (size_t i = 0; i < rx.length(); i++) {
-        Serial.print((char)rx[i]);
-      }
-    } 
+    size_t len = rx_val.length();
+    if (len > 0) {
+      const uint8_t* p = (const uint8_t*)rx_val.data();
+      Serial.print("[RX] ");
+      SerialPrintPrintable(p, len);
+      Serial.println();
+    }
 
     if(sendToMesh) {
-      // TODO: workout how to do this asyncronoushly / update text sent
-      Serial.println("sending text...");
-      SendTextMessage(BroadcastPeer, rx_val);
+      Serial.println("[MESH] Sending text to mesh...");
+      SendTextMessage(BroadcastPeer, String(rx_val.c_str()));
     }
   }
 };
@@ -106,9 +126,10 @@ class RxCallbacks : public BLECharacteristicCallbacks {
 // set callbacks, and start advertising with the provided name suffix.
 void InitializeBLE(String aName){
   InitializeSerial();
-  
-  Serial.println("Meshenger Pager - BLE NUS");
-  Serial.println("Connect with the web app (Chrome) or any NUS client.");
+  Serial.println();
+  Serial.println("========== Meshenger Pager ==========");
+  Serial.println("BLE NUS - connect with web app or any NUS client");
+  Serial.println("=====================================");
 
   BLEDevice::init(DEVICE_NAME + aName);
   pServer = BLEDevice::createServer();
@@ -137,7 +158,8 @@ void InitializeBLE(String aName){
   pAdvertising->setMaxPreferred(0x12);
   BLEDevice::startAdvertising();
   isAdvertising = true;
-  Serial.println("Advertising as \"" DEVICE_NAME "\"");
+  Serial.println("[BLE] Advertising as \"" DEVICE_NAME "\"");
+  Serial.println();
 }
 
 // IsConnected:
@@ -150,15 +172,20 @@ bool IsConnected() {return deviceConnected; }
 // Send raw byte data to the connected BLE client via notifications,
 // chunking the payload to TX_BUF_SIZE and flushing on newline.
 void SendToApp(const std::span<const std::byte> aData){
-  Serial.println("sending to app...");
-  // Buffer for data to send to the connected client (e.g. from Serial or mesh later)
+  size_t dataLen = 0;
+  const size_t dataSize = aData.size();
+  if (dataSize == 0 || !deviceConnected) return;
+
+  Serial.print("[TX] Sending to app (");
+  Serial.print(dataSize);
+  Serial.println(" bytes)");
+
   uint8_t txBuf[TX_BUF_SIZE];
   int txLen = 0;
-  int dataLen = 0;
-  // Send any pending data from Serial to the BLE client (for future: mesh -> BLE)
-  while (deviceConnected && txLen < aData.size()) {
+
+  while (deviceConnected && dataLen < dataSize) {
     txBuf[txLen++] = (uint8_t)aData[dataLen++];
-    if (txLen >= TX_BUF_SIZE || txBuf[txLen - 1] == '\n') {
+    if (txLen >= TX_BUF_SIZE || (txLen > 0 && txBuf[txLen - 1] == '\n')) {
       pTxCharacteristic->setValue(txBuf, txLen);
       pTxCharacteristic->notify();
       txLen = 0;
@@ -167,7 +194,6 @@ void SendToApp(const std::span<const std::byte> aData){
   if (txLen > 0 && deviceConnected) {
     pTxCharacteristic->setValue(txBuf, txLen);
     pTxCharacteristic->notify();
-    txLen = 0;
   }
 }
 

@@ -14,6 +14,9 @@ Author: Team 2
 Creation Date: 02/26/2026
 */
 
+// Build as BLE-only pager (no Mesh/Helpers.hpp); BLE.hpp provides stubs for BroadcastPeer/SendTextMessage.
+#define PAGER_BLE_STANDALONE
+
 // Custom Libraries
 #include "../BLE.hpp"
 
@@ -24,6 +27,7 @@ Creation Date: 02/26/2026
 // setup:
 // Initialize BLE with a test suffix for the device name.
 void setup() {
+  delay(300);  // let boot settle so serial monitor shows clean output
   InitializeBLE("Test");
 }
 
