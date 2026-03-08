@@ -52,6 +52,7 @@ void loop() {
       )
     );
   }
-  delay(1000);
 #endif
+  AnnouceMAC();
+  delay(10000);
 }

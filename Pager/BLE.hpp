@@ -98,7 +98,15 @@ static void SerialPrintPrintable(const uint8_t* data, size_t len) {
 // Handler for incoming BLE writes from the client (RX characteristic). Forwards data to mesh when enabled.
 class RxCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) {
-    auto rx_val = pCharacteristic->getValue();
+  auto rx_val = pCharacteristic->getValue();
+  std::string rx = std::string(rx_val.c_str());
+	if (rx.empty()) {
+      return;
+    }
+	
+	if (rx[0] == 'm') {
+    // Message from app to send to mesh
+    rx = rx.substr(1);  // Remove message type prefix
     size_t len = rx_val.length();
     if (len > 0) {
       const uint8_t* p = reinterpret_cast<const uint8_t*>(rx_val.c_str());
@@ -109,7 +117,15 @@ class RxCallbacks : public BLECharacteristicCallbacks {
 
     if(sendToMesh) {
       Serial.println("[MESH] Sending text to mesh...");
-      SendTextMessage(BroadcastPeer, String(rx_val.c_str()));
+      rx_val.remove(0,1);  // Remove the 'm' prefix before sending
+		  SendTextMessage(BroadcastPeer, String(rx_val.c_str()));
+	    }
+    } else if (rx[0] == 'l') {
+      // Command from app to list peers
+      rx = "";  // No additional data needed
+      SendToApp(PeersJSON());
+    } else {
+      Serial.println("ERR: Received unknown command from BLE client");
     }
   }
 };

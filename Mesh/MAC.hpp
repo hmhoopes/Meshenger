@@ -42,7 +42,7 @@ class MAC {
 
     // to_arduinostr:
     // Format MAC as an Arduino String (hex segments separated by ':') for BLE naming/logging.
-    String to_arduinostr(){
+    String to_arduinostr() const{
       String ret;
       ret = String(addr[0], HEX);
       ret = ret + ":";
@@ -60,7 +60,7 @@ class MAC {
 
     // to_string:
     // Return a std::string representation of the MAC in hex separated by ':'.
-    std::string to_string(){
+    std::string to_string() const{
       char buf[100];
       sprintf(buf, "%02x:%02x:%02x:%02x:%02x:%02x",
                     addr[0], addr[1], addr[2],
@@ -70,7 +70,7 @@ class MAC {
 
     // to_cstr:
     // Return a C-style string pointer for quick logging (note: returns pointer into a temporary).
-    const char* to_cstr(){
+    const char* to_cstr() const{
       return to_string().c_str();
     }
 

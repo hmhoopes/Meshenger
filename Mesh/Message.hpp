@@ -44,13 +44,13 @@ static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - (sizeof(int) + sizeof(
 // Container for a mesh message including type, id and a fixed-size payload buffer.
 // Also provides simple formatting helpers for logging.
 typedef struct Message {
-    std::string to_string(){
+    std::string to_string() const {
       char buf[ESP_NOW_MAX_DATA_LEN];
       sprintf(buf, "Type: %d | ID: %d | Message: %s\n", type, id, info);
       return std::string(buf);
     }
 
-    const char* to_cstr(){
+    const char* to_cstr() const {
       return to_string().c_str();
     }
 

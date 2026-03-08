@@ -252,6 +252,7 @@
       font-family: 'Outfit', sans-serif;
       font-weight: 500;
       cursor: pointer;
+      color: var(--text);
       border: none;
       border-radius: var(--radius);
       transition: background 0.15s, opacity 0.15s;
@@ -270,7 +271,18 @@
       font-size: 0.9rem;
     }
 
+    #btnPeerList{
+      background: var(--accent);
+      color: var(--bg);
+      padding: 0.65rem 1.25rem;
+      font-size: 0.9rem;
+    }
+
     #btnConnect:hover:not(:disabled) {
+      background: #4dce68;
+    }
+
+    #btnPeerList:hover:not(:disabled) {
       background: #4dce68;
     }
 
@@ -361,6 +373,7 @@
   <header style="border-top: 1px solid var(--border); border-bottom: none;">
     <span style="font-size: 0.8rem; color: var(--text-muted);">Web app → BLE (Nordic UART) → LocalESP</span>
     <button id="btnConnect">Connect to device</button>
+    <button id="btnPeerList">Refresh Peer List</button>
   </header>
 
   <script>
@@ -377,6 +390,7 @@
     const form = document.getElementById('form');
     const input = document.getElementById('input');
     const btnConnect = document.getElementById('btnConnect');
+    const btnPeerList = document.getElementById('btnPeerList');
     const btnSend = document.getElementById('btnSend');
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
@@ -389,12 +403,7 @@
     const settingSounds = document.getElementById('settingSounds');
     const settingBrightness = document.getElementById('settingBrightness');
 
-    // Simple, static peer list for now
-    const peers = [
-      { id: 'peer1', name: 'Node 1' },
-      { id: 'peer2', name: 'Node 2' },
-      { id: 'peer3', name: 'Node 3' },
-    ];
+    let peers = [];
 
     // BLE connection state
     let device = null;
@@ -425,8 +434,9 @@
       peers.forEach(peer => {
         const li = document.createElement('li');
         const btn = document.createElement('button');
-        btn.textContent = peer.name;
-        btn.addEventListener('click', () => selectPeer(peer.id));
+        btn.textContent = peer;
+        btn.addEventListener('click', () => selectPeer(peer));
+        console.log('Added peer to list:', peer);
         li.appendChild(btn);
         peersListEl.appendChild(li);
       });
@@ -435,12 +445,12 @@
     /** Handle peer selection and open its chat window */
     function selectPeer(peerId) {
       currentPeerId = peerId;
-      const peer = peers.find(p => p.id === peerId);
-      chatPeerLabel.textContent = peer ? `Chat with ${peer.name}` : 'Chat';
+      const peer = peers.find(p => p === peerId);
+      chatPeerLabel.textContent = peer ? `Chat with ${peer}` : 'Chat';
       // Highlight active peer
       const buttons = peersListEl.querySelectorAll('button');
       buttons.forEach(btn => {
-        btn.classList.toggle('active', btn.textContent === (peer && peer.name));
+        btn.classList.toggle('active', btn.textContent === (peer));
       });
       setSection('messages');
     }
@@ -530,6 +540,20 @@
             decoded = new TextDecoder('utf-8', { fatal: false }).decode(value);
           } catch (_) { return; }
           rxBuffer += decoded;
+          //first character of rxBuffer is the characteristic value type, 'l' for peer list, 'm' for message
+          if (rxBuffer[0] == 'm'){
+            console.log('Received message data from device:', rxBuffer);
+            rxBuffer = rxBuffer.slice(1); //remove the type character
+          } else if (rxBuffer[0] == 'l'){
+            rxBuffer = rxBuffer.slice(1); //remove the type character
+            console.log('Received peer list data from device:', rxBuffer);
+            const newPeers = JSON.parse(rxBuffer);
+            peers = newPeers; // replace peers with the new list from the device
+            console.log("Updated peers list:", peers);
+            renderPeers(); // update UI
+            rxBuffer = ''; // clear buffer after processing peer list
+            return; // exit early since we don't want to treat peer list as messages
+          }
           const lines = rxBuffer.split(/\r?\n/);
           rxBuffer = lines.pop() || '';
           lines.forEach(line => {
@@ -558,7 +582,8 @@
       btnSend.disabled = true;
       try {
         const encoder = new TextEncoder();
-        const data = encoder.encode(trimmed + '\n');
+      //encodes with message type 'm' for message, followed by the text and a newline as delimiter
+        const data = encoder.encode('m'+trimmed + '\n');
         const chunk = 20;
         for (let i = 0; i < data.length; i += chunk) {
           await rxChar.writeValue(data.slice(i, i + chunk));
@@ -570,8 +595,18 @@
       }
     }
 
+    /** Ask ESP32 for the current list of connected peers */
+    async function requestPeers() {
+      if (!rxChar) return;
+      const encoder = new TextEncoder();
+      //encodes with message type 'l' for peer list request
+      await rxChar.writeValue(encoder.encode('l'));  // command to trigger peer list response
+      console.log('Requested peer list from device...');
+    }
+
     // --- Event listeners ---
     btnConnect.addEventListener('click', () => connect());
+    btnPeerList.addEventListener('click', () => requestPeers());
 
     form.addEventListener('submit', (e) => {
       e.preventDefault();

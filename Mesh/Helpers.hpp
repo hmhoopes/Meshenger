@@ -38,6 +38,7 @@ Creation Date: 02/11/2026
 #include "Peer.hpp"
 
 // forward decls
+std::span<const std::byte> PeersJSON();
 void SetPagerMode();
 void InitializeSerial();
 void RegisterListen();
@@ -78,6 +79,25 @@ Peer BroadcastPeer = Peer(BroadcastMAC);
 // Peers:
 // Local list of discovered/known peers.
 std::vector<Peer> Peers;
+
+//Function to get a JSON-formatted list of peer MAC addresses for sending to BLE client
+std::span<const std::byte> PeersJSON() {
+  Serial.println("Generating peers JSON...");
+  Serial.print("Peers Size: ");
+  Serial.println(Peers.size());
+  //include the 'l' command prefix to indicate this is a peer list response
+  std::string json = "l[";
+  for (size_t i = 0; i < Peers.size(); i++) {
+    json += "\"" + std::string(Peers[i].GetMAC().to_cstr()) + "\"";
+    if (i < Peers.size() - 1) {
+      json += ",";
+    }
+  }
+  json += "]";
+  Serial.print("Generated JSON: ");
+  Serial.println(json.c_str());
+  return std::as_bytes(std::span<char>(reinterpret_cast<char *>(json.data()), json.size()));
+}
 
 // InitializeSerial:
 // Ensure serial I/O is initialized (115200) for logging and debug output.
@@ -227,6 +247,13 @@ void HandleText(const esp_now_recv_info* info, const Message message) {
   } else {
     Serial.println("ERR: Source peer has not been added.");
   }
+
+  if (isPager){
+    //TODO: improve the format sent to end user
+    Serial.println("receiving message...");
+    size_t len = strnlen(message.info, MessageSize);
+    SendToApp(std::as_bytes(std::span<const char>(message.info, len)));
+  }
 }
 
 // OnDataReceive:
@@ -239,13 +266,6 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
 
   Message message;
   memcpy(&message, incomingData, sizeof(Message));
-
-  if (isPager && message.type == MessageType::Text){
-    //TODO: improve the format sent to end user
-    Serial.println("receiving message...");
-    size_t len = strnlen(message.info, MessageSize);
-    SendToApp(std::as_bytes(std::span<char>(message.info, len)));
-  }
 
   switch (message.type){
     case MessageType::ACK:
@@ -274,6 +294,7 @@ bool SendTextMessage(Peer receiver, String msg) {
   Message message;
   message.type = MessageType::Text;
   bool success = true;
+  printf("Sending text message: %s\n", msg.c_str());
 
   // Iterate over entire message
   for (int i = 0; msg.length() > i * MessageSize; i++) {
