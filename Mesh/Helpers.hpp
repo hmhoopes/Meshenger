@@ -50,6 +50,7 @@ void HandleACK(const esp_now_recv_info* info, const Message message) ;
 void HandleText(const esp_now_recv_info* info, const Message message) ;
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) ;
 bool SendTextMessage(Peer receiver, String msg) ;
+extern Peer BroadcastPeer;
 
 #include "../Pager/BLE.hpp"
 

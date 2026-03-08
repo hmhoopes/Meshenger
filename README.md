@@ -16,6 +16,9 @@ Mesh based messaging system using ESP Now.
 3. Use the following commands to build/flash onto ESP32
 
 ```bash
+# NOTE: Variables created with '?=' can be set from the command line
+#       e.g. 'make flash PORT=/dev/ttyUSB1 BUILD_DIR=./Pager'
+
 arduino-cli board list   # This will list available boards for you to flash
 
 make build               # Build the project
