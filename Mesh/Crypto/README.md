@@ -1,4 +1,4 @@
-## Static DH
+## Method 1: Static DH
 - Uses static keys, which don't provide forward secrecy but do provide authentication / resilience to MITM
 - Didn't follow this scheme since desired forward secrecy, but left as indication of thought process
 
@@ -22,7 +22,7 @@
     - User A calls `dh2(k, f)` with B's public key as first argument and A's private key `f` as second
 5. Now, User A can encrypt any traffic to B with shared secret
 
-## TLS-style (forward secret and auth !!)
+## Method 2: TLS-style
 - **What will be used**
 - Evidence that TLS does something similar:
     - https://thecybersecurityman.com/2018/04/25/https-the-tls-handshake-using-diffie-hellman-ephemeral/
@@ -63,7 +63,7 @@
 5. Further communication encrypted via secret
     - Note: secret should be stored with counter of how many messages it has been sent with, after x amount it should be dropped and re-established via same method
 
-## Ephemeral DH w/ PUF auth
+## Method 3: Ephemeral DH w/ PUF auth
 - Overview: 
     - have central server store MAC of devices with list of challenge-response pairs
         - store thousands of c-r pairs

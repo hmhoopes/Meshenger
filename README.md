@@ -1,4 +1,22 @@
-# How to Test Meshenger (Web App + Pager)
+# Meshenger
+
+## Summary
+
+Meshenger is a secure, decentralized messaging system built on ESP32 devices. It enables peer-to-peer communication through a mesh network using ESP-NOW for long-range connectivity, with a BLE pager acting as a bridge to a web-based user interface. The system supports encrypted messaging via cryptographic utilities, allowing users to send messages across a network of nodes without relying on centralized servers.
+
+### Diagram:
+![Architecture Diagram|600](./Network_Diagram.png)
+
+## Table of Contents
+
+- [How to Test Meshenger (Web App + Pager)](#how-to-test-meshenger-web-app--pager)
+- [App README](./App/README.md)
+- [Pager README](./Pager/README.md)
+- [Mesh Helpers README](./Mesh/README.md)
+- [Mesh Crypto README](./Mesh/Crypto/README.md)
+- [Mesh Server README](./Mesh/Server/README.md)
+
+## How to Test Meshenger (Web App + Pager)
 
 Step-by-step commands to build the Pager firmware, flash it to an ESP32, run the web app, and test BLE messaging. Every command is listed so you can copy-paste.
 
@@ -6,7 +24,7 @@ Step-by-step commands to build the Pager firmware, flash it to an ESP32, run the
 
 ---
 
-## Prerequisites
+### Prerequisites
 
 - **Arduino CLI** – [Install arduino-cli](https://docs.arduino.cc/arduino-cli/)
 - **ESP32 board support** – Install the ESP32 core (one-time)
@@ -16,7 +34,7 @@ Step-by-step commands to build the Pager firmware, flash it to an ESP32, run the
 
 ---
 
-## 1. One-time setup
+### 1. One-time setup
 
 From the **project root** (the folder that contains `App/`, `Pager/`, `Mesh/`):
 
@@ -36,7 +54,7 @@ Optional: if this repo includes a setup script, you can run it instead:
 
 ---
 
-## 2. Find the ESP32 port
+### 2. Find the ESP32 port
 
 List connected boards to get the port. On **Mac** it’s often `/dev/cu.usbserial-*` or `/dev/cu.SLAB_USBtoUART`; on **Linux** it’s usually `/dev/ttyUSB*` or `/dev/ttyACM*`; on **Windows** it’s typically `COM3`, `COM4`, etc.
 
@@ -48,7 +66,7 @@ Note the port for your ESP32. You’ll use it in the next steps (e.g. `--port /d
 
 ---
 
-## 3. Build the Pager sketch
+### 3. Build the Pager sketch
 
 The Pager is the BLE bridge the web app talks to. Build it with the **huge_app** partition so it fits:
 
@@ -60,7 +78,7 @@ If you see **“Peer was not declared”** or other compile errors, make sure yo
 
 ---
 
-## 4. Flash the Pager to the ESP32
+### 4. Flash the Pager to the ESP32
 
 Replace `YOUR_PORT` with the port from step 2. Examples:
 
@@ -80,7 +98,7 @@ arduino-cli upload --fqbn esp32:esp32:esp32:PartitionScheme=huge_app --port YOUR
 
 ---
 
-## 5. Open the serial monitor (optional)
+### 5. Open the serial monitor (optional)
 
 Useful to see `[BLE]`, `[RX]`, `[TX]` and confirm the board is running. Use the **same port** as in step 4 and **115200** baud:
 
@@ -104,7 +122,7 @@ To exit the monitor: **Ctrl+C**.
 
 ---
 
-## 6. Serve the web app
+### 6. Serve the web app
 
 Open a **new** terminal (leave the serial monitor running in the other if you use it). From the **project root**:
 
@@ -127,7 +145,7 @@ Serving HTTP on :: port 8000 (http://[::]:8000/) ...
 
 ---
 
-## 7. Test in the browser
+### 7. Test in the browser
 
 1. Open **Chrome** and go to:
    ```
@@ -152,7 +170,7 @@ Serving HTTP on :: port 8000 (http://[::]:8000/) ...
 
 ---
 
-## Quick reference: all commands in order
+### Quick reference: all commands in order
 
 Run these from the **project root** (the folder that contains `App/`, `Pager/`, `Mesh/`). Replace `YOUR_PORT` with your ESP32 port from `arduino-cli board list`.
 
@@ -183,7 +201,7 @@ Then in Chrome: **http://localhost:8000** → Connect to device → send message
 
 ---
 
-## Building the mesh node (optional)
+### Building the mesh node (optional)
 
 The **mesh node** is the ESP-NOW firmware (different from the Pager). To build and flash it from the project root:
 
@@ -197,7 +215,7 @@ Use the same port as for the Pager (e.g. `PORT=/dev/cu.usbserial-0001` or `PORT=
 
 ---
 
-## Troubleshooting
+### Troubleshooting
 
 | Issue | What to do |
 |-------|------------|
