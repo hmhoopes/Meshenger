@@ -21,10 +21,12 @@ build:
 		$(BUILD_DIR)
 
 	# Simlink compile_commands to top level dir
-	ln -sf $(NODE_DIR)/build/compile_commands.json .
+	ln -sf $(BUILD_DIR)/build/compile_commands.json .
 
 upload: build
-	arduino-cli upload --fqbn $(FQBN) --port $(PORT) $(BUILD_DIR)
+	arduino-cli upload --fqbn $(FQBN) --port $(PORT) \
+		--input-dir $(BUILD_DIR)/build \
+		$(BUILD_DIR)
 
 monitor:
 	arduino-cli monitor --port $(PORT) --config baudrate=$(BAUD)

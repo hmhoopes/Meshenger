@@ -293,26 +293,26 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   }
 }
 
+
+void SendToAllPeers(String msg) {
+  auto it = std::find_if(Peers.begin(), Peers.end(), [&](const Peer& p) {
+    SendTextMessage(p.GetMAC(), msg);
+    return p.GetMAC() == source;
+  });
+}
+
 // SendTextMessage:
 // Split a long text string into MessageSize chunks and send each chunk as a Text
 // message using SendMessageWithRetry; returns overall success.
 bool SendTextMessage(MAC receiver, String msg) {
-  Peer targetPeer = Peer(MAC(std::vector<uint8_t>{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}));
-  auto found = false;
-  for (const Peer& peer : Peers) {
-    if (peer.GetMAC() == receiver) {
-      targetPeer = peer;
-      found = true;
-      break;
-    }
-  }
+  std::optional<Peer> targetPeer = FindPeer(receiver);
 
-  if (!found) {
+  if (!targetPeer.has_value()) {
     // todo: update message to include target, set that target to this, and update message handling to read message (won't be relying on targetted)
     Serial.print("Target peer");
     Serial.print(receiver.to_cstr());
     Serial.println("not found in peer list");
-    return false;
+    // return false;
   }
 
   Message message;
@@ -328,7 +328,8 @@ bool SendTextMessage(MAC receiver, String msg) {
 #ifdef DEBUG
     Serial.println("DBG: Sending message");
 #endif
-    success = SendMessageWithRetry(targetPeer, message) && success;
+    // Broadcast if message doesn't get to sender
+    success = SendMessageWithRetry(targetPeer.value_or(BroadcastPeer), message) && success;
     if (!success) {
       Serial.println("ERR: Failed to send text message.");
     }

@@ -28,6 +28,8 @@ Creation Date: 02/17/2026
 // MessageType:
 // Enumerates the different kinds of messages that can be sent/received in the mesh.
 typedef enum MessageType {
+  ReqTarget,
+  ResTarget,
   Discovery,
   DiscoveryResponse,
   Text,

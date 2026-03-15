@@ -40,7 +40,7 @@ void loop() {
 #endif
     auto inputMessage = Serial.readStringUntil('\n');
     inputMessage.trim(); // Trim whitespace and \r
-    SendTextMessage(receiver, inputMessage);
+    SendTextMessage(receiver.GetMAC(), inputMessage);
   }
   delay(2000);
 }
