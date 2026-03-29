@@ -123,7 +123,18 @@ class RxCallbacks : public BLECharacteristicCallbacks {
         return;
     }
     
-    if (rx[0] == 'm') {
+    if (messagePending){
+      Serial.print("[RX] adding to message: ");
+      Serial.println(rx.c_str());
+      auto idx = rx_val.indexOf(0x03);
+      if (idx != -1){
+        rx_val = rx_val.substring(0, idx); // Remove the delimiter from the text
+        messageToSend += rx_val;
+        SendMessage();
+      } else {
+        messageToSend += rx_val;
+      }
+    } else if (rx[0] == 'm') {
       // Message from app to send to mesh
       rx = rx.substr(1);  // Remove message type prefix
       messagePending = true;
@@ -171,17 +182,6 @@ class RxCallbacks : public BLECharacteristicCallbacks {
       }
       Serial.print("Still sending message?");
       Serial.println((messagePending) ? "true" : "false");
-    } else if (messagePending){
-      Serial.print("[RX] adding to message: ");
-      Serial.println(rx.c_str());
-      auto idx = rx_val.indexOf(0x03);
-      if (idx != -1){
-        rx_val = rx_val.substring(0, idx); // Remove the delimiter from the text
-        messageToSend += rx_val;
-        SendMessage();
-      } else {
-        messageToSend += rx_val;
-      }
     } else if (rx[0] == 'l') {
       // Command from app to list peers
       rx = "";  // No additional data needed

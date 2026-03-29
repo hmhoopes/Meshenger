@@ -293,13 +293,16 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   }
 }
 
-
+/* 
+// not sure what this is meant to do, not sure if we should do this either since we should send to 
+// server (and it handles sending to unconnected peers) not all peers
 void SendToAllPeers(String msg) {
   auto it = std::find_if(Peers.begin(), Peers.end(), [&](const Peer& p) {
     SendTextMessage(p.GetMAC(), msg);
     return p.GetMAC() == source;
   });
 }
+ */
 
 // SendTextMessage:
 // Split a long text string into MessageSize chunks and send each chunk as a Text
