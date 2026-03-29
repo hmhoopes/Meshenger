@@ -46,46 +46,46 @@ Key functionalities:
 ### Connection & Message
 #### **TODO:**
 1. Add connection tracking 
-  - update messaging
-  - add connection class
-  - add functions for establishing connection, sending to target
-  - update message handling to receiving message from connection
+    - update messaging
+    - add connection class
+    - add functions for establishing connection, sending to target
+    - update message handling to receiving message from connection
 2. Update message handling to drop / repeat
-  - track vector of last $10$ messages' hashes (of sender, id, split id)
-  - repeat to friends if not target and not in vector
-  - handle if target
-    - ack if below seen num, otherwise decrypt and send to app
-  - drop else
+    - track vector of last $10$ messages' hashes (of sender, id, split id)
+    - repeat to friends if not target and not in vector
+    - handle if target
+        - ack if below seen num, otherwise decrypt and send to app
+    - drop else
 
 #### Connection tracking
 - Each pager tracks vector of connections
 - Each connection tracks:
-  - nickname of pager?
-  - MAC of connected pager
-  - DH crypto info
-  - last acked message
-  - last sent message
-  - functions for checking connection:
-    - get nickname,
-    - bool to check if still valid (if under message limit)
-    - get remaining allowed messages
+    - nickname of pager?
+    - MAC of connected pager
+    - DH crypto info
+    - last acked message
+    - last sent message
+    - functions for checking connection:
+        - get nickname ?
+        - bool to check if still valid (if under message limit)
+        - get remaining allowed messages
 - add global funcs to check if target is a connection, get idx of target in connection vec 
 
 - Message tracks:
-  - MAC of target
-  - type
-  - id for tracking message
-  - split id for tracking split messages
+    - MAC of target
+    - type
+    - id for tracking message
+    - split id for tracking split messages
 
 - Process for sending messages
 1. call `bool EstablishConnection(target)`
-  - authenticates target and Sets up crypto keys
-  - adds target to the connection vector
-  - overwrites connection if it is in vector already
-  - returns true if successful, false if fails
+    - authenticates target and Sets up crypto keys
+    - adds target to the connection vector
+    - overwrites connection if it is in vector already
+    - returns true if successful, false if fails
 2. call `bool SendToConnection(target)`
-  - encrypts message
-  - sets id
-  - calls `SendText...` to send to target 
-  - returns true if successful, false if not
-    - fails if target not a connection / hit message limit
+    - encrypts message
+    - sets id
+    - calls `SendText...` to send to target 
+    - returns true if successful, false if not
+      - fails if target not a connection / hit message limit
