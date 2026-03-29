@@ -314,10 +314,20 @@ bool SendTextMessage(MAC receiver, String msg) {
   for (int i = 0; msg.length() > i * split_message_size; i++) {
     // Copy the message plus some offset up to message size
     auto message_chunk_size = std::min(static_cast<size_t>(split_message_size), msg.length() - i * split_message_size);
-    strncpy(message.info, msg.c_str() + i * split_message_size, message_chunk_size);  // Prevents buffer overflow
+
+    auto substring = msg.substring(i * split_message_size, i * split_message_size + message_chunk_size);
+    Serial.print("Sending message chunk size: " + String(message_chunk_size) + " | chunk: " + substring + "\n");
+    
+    Serial.print("Message before copying chunk: ");
+    Serial.println(message.to_cstr());
+
+    strncpy(message.info, substring.c_str(), message_chunk_size);  // Prevents buffer overflow
     message.info[message_chunk_size] = '\0'; // Null-terminate the message chunk
     message.header.id = i;
-    Serial.print("Sending split message number " + String(i) + " : ");
+
+    Serial.println("Message after copying chunk: " + String(message.info));
+
+    Serial.print("Sending split message number (after copying chunk) " + String(i) + " : ");
     Serial.println(message.to_cstr());
     // Broadcast if message doesn't get to sender
     success = SendMessageWithRetry(message) && success;

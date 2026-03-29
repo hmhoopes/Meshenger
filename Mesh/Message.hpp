@@ -55,7 +55,7 @@ static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - sizeof(MessageHeader);
 struct Message {
   public:
     std::string to_string() const {
-      char buf[ESP_NOW_MAX_DATA_LEN];
+      char buf[1000];
       sprintf(buf, "Type: %d | ID: %d | Source: %02x:%02x:%02x:%02x:%02x:%02x | Target: %02x:%02x:%02x:%02x:%02x:%02x | Message: %s\n", header.type, header.id, header.source[0], header.source[1], header.source[2], header.source[3], header.source[4], header.source[5], header.target[0], header.target[1], header.target[2], header.target[3], header.target[4], header.target[5], info);
       return std::string(buf);
     }
