@@ -5,7 +5,7 @@ Description:
     Defines the Message struct, MessageType enum, payload size constant,
     and send routines (with retry/ACK logic) used by the mesh.
 Inputs:
-    - Peer targets, Message instances, MAC addresses.
+    - targets, Message instances, MAC addresses.
 Outputs:
     - Message formatting helpers, send/ retry functions.
 External Sources:
@@ -18,7 +18,7 @@ Creation Date: 02/17/2026
 #define MESH_MESSAGE_HPP
 
 #include "MAC.hpp"
-#include "Peer.hpp"
+#include "Helpers.hpp"
 
 // WiFi & ESP Headers
 #include <esp_now.h>
@@ -38,17 +38,25 @@ typedef enum MessageType {
   Invalid,
 } MessageType;
 
+struct MessageHeader {
+  MessageType type = MessageType::Invalid;
+  int id = 0;
+  unsigned char source[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+  unsigned char target[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+};
 // MessageSize:
 // Size of the payload buffer for a Message, computed from ESP-NOW max payload less header fields.
-static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - (sizeof(int) + sizeof(MessageType));
+static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - sizeof(MessageHeader);
 
 // Message:
 // Container for a mesh message including type, id and a fixed-size payload buffer.
 // Also provides simple formatting helpers for logging.
-typedef struct Message {
+#pragma pack(push, 1)
+struct Message {
+  public:
     std::string to_string() const {
       char buf[ESP_NOW_MAX_DATA_LEN];
-      sprintf(buf, "Type: %d | ID: %d | Message: %s\n", type, id, info);
+      sprintf(buf, "Type: %d | ID: %d | Source: %02x:%02x:%02x:%02x:%02x:%02x | Target: %02x:%02x:%02x:%02x:%02x:%02x | Message: %s\n", header.type, header.id, header.source[0], header.source[1], header.source[2], header.source[3], header.source[4], header.source[5], header.target[0], header.target[1], header.target[2], header.target[3], header.target[4], header.target[5], info);
       return std::string(buf);
     }
 
@@ -56,10 +64,10 @@ typedef struct Message {
       return to_string().c_str();
     }
 
-    MessageType type;
-    int id;
+    MessageHeader header;
     char info[MessageSize];
-} Message;
+};
+#pragma pack(pop)
 
 // TIMEOUT:
 // Base timeout in milliseconds used for retransmit timing when waiting for ACKs.
@@ -75,17 +83,11 @@ bool waitingForAck = false;
 int ackId = -1;
 
 // SendMessage:
-// Sends a message to the target peer via ESP-NOW without higher-level ACK/retry handling.
+// Sends a message to the target via ESP-NOW without higher-level ACK/retry handling.
 // Returns true on esp_now_send success.
-bool SendMessage(Peer target, const Message message) {
-  if (!target.IsAdded()){
-    Serial.print("ERR: Cannot send message to unadded peer target: ");
-    Serial.println(target.mac.to_cstr());
-    return false;
-  }
-
+bool SendMessage(const Message message) {
   // Send message via ESP-NOW
-  esp_err_t result = esp_now_send(target.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
+  esp_err_t result = esp_now_send(BroadcastPeer.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
 
   // Only ACKs at MAC level
   return result == ESP_OK;
@@ -94,18 +96,12 @@ bool SendMessage(Peer target, const Message message) {
 // SendMessageWithRetry:
 // Sends a message and blocks (with retries) until an ACK is received or the retry limit is reached.
 // Uses TIMEOUT and MAX_RETRY to control behavior.
-bool SendMessageWithRetry(Peer target, const Message message) {
-  if (!target.IsAdded()){
-    Serial.print("ERR: Cannot send message to unadded peer target: ");
-    Serial.println(target.mac.to_cstr());
-    return false;
-  }
-
+bool SendMessageWithRetry(const Message message) {
   // Send message via ESP-NOW
-  esp_err_t result = esp_now_send(target.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
+  esp_err_t result = esp_now_send(BroadcastPeer.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
 
   waitingForAck = true;
-  ackId = message.id;
+  ackId = message.header.id;
   unsigned long sendTime = millis(); // Message send start send time
   int retryCount = 0; // Count the number of times we've retried
 
@@ -124,7 +120,7 @@ bool SendMessageWithRetry(Peer target, const Message message) {
       }
       retryCount++;
       Serial.printf("DBG: Resending message - attempt %d\n", retryCount);
-      result = esp_now_send(target.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
+      result = esp_now_send(BroadcastPeer.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
       sendTime = millis();
       waitingForAck = true;
     }

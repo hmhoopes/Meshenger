@@ -34,6 +34,11 @@ Creation Date: 02/11/2026
 
 // Helper files
 #include "MAC.hpp"
+
+extern MAC BroadcastMAC;
+extern Peer BroadcastPeer;
+
+// Helper files cont'd
 #include "Message.hpp"
 #include "Peer.hpp"
 
@@ -51,7 +56,6 @@ void HandleACK(const esp_now_recv_info* info, const Message message) ;
 void HandleText(const esp_now_recv_info* info, const Message message) ;
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) ;
 bool SendTextMessage(MAC receiver, String msg) ;
-extern Peer BroadcastPeer;
 
 #include "../Pager/BLE.hpp"
 
@@ -142,10 +146,10 @@ void InitializeESPNow(){
 void AnnouceMAC(){
   Message message;
   message.info[0] = '\0';
-  message.type = MessageType::Discovery;
-  message.id = 0;
+  message.header.type = MessageType::Discovery;
+  message.header.id = 0;
   
-  bool success = SendMessage(BroadcastPeer, message);
+  bool success = esp_now_send(BroadcastPeer.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message)) == ESP_OK;
   Serial.println((success) ? "Annouced successfully" : "ERR: couldn't send message");
 }
 
@@ -185,12 +189,12 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
   }
 
   //Send reply
-  if (message.id == 0){
+  if (message.header.id == 0){
     Message message;
     message.info[0] = '\0';
-    message.type = MessageType::DiscoveryResponse;
-    message.id = 1;
-    bool success = SendMessage(source_peer, message);
+    message.header.type = MessageType::DiscoveryResponse;
+    message.header.id = 1;
+    bool success = esp_now_send(source_peer.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message)) == ESP_OK;
     Serial.println((success) ? "Replied successfully" : "ERR: couldn't send message");
   }
 }
@@ -226,7 +230,7 @@ void HandleACK(const esp_now_recv_info* info, const Message message) {
   Serial.println(source.to_cstr());
 #endif
   
-  if (message.id == ackId) {
+  if (message.header.id == ackId) {
     waitingForAck = false;
   } else {
     Serial.println("ERR: ACK id did not match message");
@@ -236,24 +240,22 @@ void HandleACK(const esp_now_recv_info* info, const Message message) {
 // HandleText:
 // Handle incoming Text messages: send ACK back to sender if known.
 void HandleText(const esp_now_recv_info* info, const Message message) {
-  MAC source = GetSenderMAC(info);
-  auto source_peer = FindPeer(source);
+  Message ack_message;
+  auto mac = GetMACAddress();
+  memcpy(ack_message.header.source, mac.GetAddressArray(), 6);
+  memcpy(ack_message.header.target, message.header.source, 6);
+  ack_message.header.type = MessageType::ACK;
+  ack_message.header.id = message.header.id;
+  SendMessage(ack_message);
 
-  if (source_peer.has_value()) {
-    Message ack_message;
-    ack_message.type = MessageType::ACK;
-    ack_message.id = message.id;
-    SendMessage(*source_peer, ack_message);
-  } else {
-    Serial.println("ERR: Source peer has not been added.");
-  }
-
-  if (isPager){
+  auto sourceMac = MAC(std::vector<uint8_t>(message.header.source, message.header.source + 6));
+  MAC targetMac = MAC(std::vector<uint8_t>(message.header.target, message.header.target + 6));
+  if (isPager && targetMac == GetMACAddress()){
     //TODO: improve the format sent to end user
-    Serial.println("receiving message...");
+    Serial.println("parsing message...");
     size_t len = strnlen(message.info, MessageSize);
     std::string text(message.info, len);
-    std::string sourceStr = source.to_string();
+    std::string sourceStr = sourceMac.to_string();
     std::string ret = 'm' + sourceStr + text;
     
     Serial.print("Forwarding to app: ");
@@ -273,7 +275,7 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   Message message;
   memcpy(&message, incomingData, sizeof(Message));
 
-  switch (message.type){
+  switch (message.header.type){
     case MessageType::ACK:
       HandleACK(info, message);
       break;
@@ -284,55 +286,41 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
       HandleDiscovery(info, message);
       break;
     case MessageType::Text:
+      Serial.print("Message Recieved: ");
+      Serial.println(message.to_cstr());
       HandleText(info, message);
+      break;
     case MessageType::Invalid:
     default:
-      Serial.print("Message Recieved: ");
+      Serial.print("Invalid Message Recieved: ");
       Serial.println(message.to_cstr());
       break;
   }
 }
 
-/* 
-// not sure what this is meant to do, not sure if we should do this either since we should send to 
-// server (and it handles sending to unconnected peers) not all peers
-void SendToAllPeers(String msg) {
-  auto it = std::find_if(Peers.begin(), Peers.end(), [&](const Peer& p) {
-    SendTextMessage(p.GetMAC(), msg);
-    return p.GetMAC() == source;
-  });
-}
- */
-
 // SendTextMessage:
 // Split a long text string into MessageSize chunks and send each chunk as a Text
 // message using SendMessageWithRetry; returns overall success.
 bool SendTextMessage(MAC receiver, String msg) {
-  std::optional<Peer> targetPeer = FindPeer(receiver);
-
-  if (!targetPeer.has_value()) {
-    // todo: update message to include target, set that target to this, and update message handling to read message (won't be relying on targetted)
-    Serial.print("Target peer");
-    Serial.print(receiver.to_cstr());
-    Serial.println("not found in peer list");
-    // return false;
-  }
-
   Message message;
-  message.type = MessageType::Text;
+  message.header.type = MessageType::Text;
+  memcpy(message.header.target, receiver.GetAddressArray(), 6);
+  memcpy(message.header.source, GetMACAddress().GetAddressArray(), 6);
   bool success = true;
   printf("Sending text message: %s\n", msg.c_str());
 
   // Iterate over entire message
-  for (int i = 0; msg.length() > i * MessageSize; i++) {
+  const auto split_message_size = MessageSize - 1; // Leave space for null terminator
+  for (int i = 0; msg.length() > i * split_message_size; i++) {
     // Copy the message plus some offset up to message size
-    strncpy(message.info, msg.c_str() + i * MessageSize, MessageSize);  // Prevents buffer overflow
-    message.id = i;
-#ifdef DEBUG
-    Serial.println("DBG: Sending message");
-#endif
+    auto message_chunk_size = std::min(static_cast<size_t>(split_message_size), msg.length() - i * split_message_size);
+    strncpy(message.info, msg.c_str() + i * split_message_size, message_chunk_size);  // Prevents buffer overflow
+    message.info[message_chunk_size] = '\0'; // Null-terminate the message chunk
+    message.header.id = i;
+    Serial.print("Sending split message number " + String(i) + " : ");
+    Serial.println(message.to_cstr());
     // Broadcast if message doesn't get to sender
-    success = SendMessageWithRetry(targetPeer.value_or(BroadcastPeer), message) && success;
+    success = SendMessageWithRetry(message) && success;
     if (!success) {
       Serial.println("ERR: Failed to send text message.");
     }
