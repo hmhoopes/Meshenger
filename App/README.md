@@ -98,3 +98,21 @@ Key points:
   - Web Bluetooth connection and NUS read/write logic.
   - In-memory peers/messages; outgoing delivery state (pending / sent / failed); appearance in `localStorage`.
 
+## Web App End-To-End Encryption Scheme
+- Previously implemeted an encryption scheme on each device, but realized it would be better / quicker to encrypt on the web app
+- should probably follow what Signal does
+
+### Useful links:
+- https://en.wikipedia.org/wiki/End-to-end_encryption
+- https://en.wikipedia.org/wiki/Signal_Protocol
+- https://signal.org/docs/ 
+- https://signal.org/docs/specifications/x3dh/
+- https://signal.org/docs/specifications/doubleratchet/
+
+### Scheme
+- follow signal's `Sesame` protocol (here: https://signal.org/docs/specifications/sesame/)
+   - uses X3DH for establishing shared secret, even when one party is offline
+   - uses DoubleRatcheting to continuously switch keys, enabling forward secrecy (even when one party is offline)
+
+### How would groupchats work?
+- groupchats would work by having each sender send a message to each recipient in the groupchat, while the UI makes the messages appear as a groupchat
