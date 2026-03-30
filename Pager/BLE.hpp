@@ -244,6 +244,7 @@ bool IsConnected() {return deviceConnected; }
 // Send raw byte data to the connected BLE client via notifications,
 // chunking the payload to TX_BUF_SIZE and flushing on newline.
 void SendToApp(const std::span<const std::byte> aData){
+  Serial.println("[TX] Preparing to send to app ...");
   size_t dataLen = 0;
   const size_t dataSize = aData.size();
   if (dataSize == 0 || !deviceConnected) return;
@@ -267,6 +268,7 @@ void SendToApp(const std::span<const std::byte> aData){
     pTxCharacteristic->setValue(txBuf, txLen);
     pTxCharacteristic->notify();
   }
+  Serial.println("[TX] Sent to app");
 }
 
 #endif
