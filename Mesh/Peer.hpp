@@ -66,8 +66,21 @@ class Peer {
     bool IsAdded(){
       return added || prev_added;
     }
-    
+
+    // UpdateLastSeen:
+    // Record the current time as the last time this peer was heard from.
+    void UpdateLastSeen(){
+      lastSeen = millis();
+    }
+
+    // IsStale:
+    // Return true if the peer has not been heard from within timeoutMs milliseconds.
+    bool IsStale(unsigned long timeoutMs) const {
+      return lastSeen > 0 && (millis() - lastSeen) > timeoutMs;
+    }
+
     MAC mac;
+    unsigned long lastSeen{0};
 
   private:
     bool added{false};

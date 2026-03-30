@@ -39,6 +39,7 @@ class MAC {
     // GetAddressArray:
     // Return raw pointer to the internal 6-byte address array for use with ESP-NOW APIs.
     uint8_t* GetAddressArray() {return addr.data();}
+    const uint8_t* GetAddressArray() const {return addr.data();}
 
     // to_arduinostr:
     // Format MAC as an Arduino String (hex segments separated by ':') for BLE naming/logging.

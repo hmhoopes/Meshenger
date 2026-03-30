@@ -13,7 +13,7 @@ BAUD      ?= 115200
 
 BUILD_DIR ?= ./Mesh/Node/node
 
-.PHONY: build upload monitor lsp-index
+.PHONY: build upload monitor lsp-index tui
 
 build:
 	arduino-cli compile --fqbn $(FQBN) \
@@ -30,6 +30,10 @@ upload: build
 
 monitor:
 	arduino-cli monitor --port $(PORT) --config baudrate=$(BAUD)
+
+# Monitor using the python tui for better interface (posix only)
+tui:
+	python3 ./monitor.py $(PORT) $(BAUD)
 
 flash: upload monitor
 

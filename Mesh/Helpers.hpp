@@ -31,6 +31,7 @@ Creation Date: 02/11/2026
 #include <optional>
 #include <assert.h>
 #include <span>
+#include <utility>
 
 // Helper files
 #include "MAC.hpp"
@@ -50,12 +51,17 @@ void RegisterListen();
 void InitializeESPNow();
 void AnnouceMAC();
 std::optional<Peer> FindPeer(MAC source);
-void HandleDiscovery(const esp_now_recv_info* info, const Message message) ;
-void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message message) ;
-void HandleACK(const esp_now_recv_info* info, const Message message) ;
-void HandleText(const esp_now_recv_info* info, const Message message) ;
-void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) ;
-bool SendTextMessage(MAC receiver, String msg) ;
+std::optional<Peer> FindNextHop(MAC dst);
+void HandleDiscovery(const esp_now_recv_info* info, const Message message);
+void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message message);
+void HandleACK(const esp_now_recv_info* info, const Message message);
+void HandleText(const esp_now_recv_info* info, const Message message);
+void HandlePeerList(const esp_now_recv_info* info, const Message message);
+void SendPeerList(Peer target);
+void PruneStale();
+void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
+bool SendTextMessage(MAC receiver, String msg);
+extern Peer BroadcastPeer;
 
 #include "../Pager/BLE.hpp"
 
@@ -80,9 +86,23 @@ void SetPagerMode(){
 MAC BroadcastMAC = MAC(std::vector<uint8_t>{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF});
 Peer BroadcastPeer = Peer(BroadcastMAC);
 
+// SelfMAC:
+// This device's own MAC address; initialized in InitializeESPNow.
+MAC SelfMAC;
+
 // Peers:
-// Local list of discovered/known peers.
+// Local list of directly reachable (single-hop) peers.
 std::vector<Peer> Peers;
+
+// RoutingTable:
+// Maps a destination MAC to the next-hop MAC for multi-hop delivery.
+// Populated when a direct neighbor shares its peer list via PeerList messages.
+std::vector<std::pair<MAC, MAC>> RoutingTable;
+
+// PEER_TIMEOUT_MS:
+// How long (ms) without a discovery heartbeat before a peer is considered gone.
+// Set to 5x the announcement interval (2 s) to tolerate a few missed broadcasts.
+#define PEER_TIMEOUT_MS 10000
 
 //Function to get a JSON-formatted list of peer MAC addresses for sending to BLE client
 std::span<const std::byte> PeersJSON() {
@@ -123,9 +143,14 @@ void RegisterListen() {
 // Aborts on critical failures.
 void InitializeESPNow(){
   InitializeSerial();
-  
+
   // Set device as a Wi-Fi Station
   WiFi.mode(WIFI_STA);
+
+  // Capture our own MAC for routing header population
+  SelfMAC = GetMACAddress();
+  Serial.print("Node MAC: ");
+  Serial.println(SelfMAC.to_cstr());
 
   // Init ESP-NOW
   if (esp_now_init() != ESP_OK) {
@@ -143,13 +168,18 @@ void InitializeESPNow(){
 
 // AnnouceMAC:
 // Broadcast a discovery message to the mesh to announce this device's presence.
+// Also prunes peers that have not been heard from within PEER_TIMEOUT_MS.
 void AnnouceMAC(){
-  Message message;
-  message.info[0] = '\0';
-  message.header.type = MessageType::Discovery;
-  message.header.id = 0;
-  
-  bool success = esp_now_send(BroadcastPeer.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message)) == ESP_OK;
+  PruneStale();
+
+  Message message = {};
+  message.type = MessageType::Discovery;
+  message.id = 0;
+  memcpy(message.src, SelfMAC.GetAddressArray(), 6);
+  memcpy(message.dst, BroadcastMAC.GetAddressArray(), 6);
+  message.ttl = 1;
+
+  bool success = SendMessage(BroadcastPeer, message);
   Serial.println((success) ? "Annouced successfully" : "ERR: couldn't send message");
 }
 
@@ -186,15 +216,24 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
 
   if (!source_peer.PrevAdded()){
     Peers.emplace_back(source_peer);
+    SendPeerList(source_peer); // Share known peers so sender can build routing table
   }
 
+  // Refresh lastSeen so PruneStale doesn't evict this peer.
+  auto existing = std::find_if(Peers.begin(), Peers.end(), [&](Peer& p){
+    return p.GetMAC() == source;
+  });
+  if (existing != Peers.end()) existing->UpdateLastSeen();
+
   //Send reply
-  if (message.header.id == 0){
-    Message message;
-    message.info[0] = '\0';
-    message.header.type = MessageType::DiscoveryResponse;
-    message.header.id = 1;
-    bool success = esp_now_send(source_peer.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message)) == ESP_OK;
+  if (message.id == 0){
+    Message reply = {};
+    reply.type = MessageType::DiscoveryResponse;
+    reply.id = 1;
+    memcpy(reply.src, SelfMAC.GetAddressArray(), 6);
+    memcpy(reply.dst, source.GetAddressArray(), 6);
+    reply.ttl = 1;
+    bool success = SendMessage(source_peer, reply);
     Serial.println((success) ? "Replied successfully" : "ERR: couldn't send message");
   }
 }
@@ -218,7 +257,14 @@ void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message 
 
   if (!source_peer.PrevAdded()){
     Peers.emplace_back(source_peer);
+    SendPeerList(source_peer); // Share known peers so responder can build routing table
   }
+
+  // Refresh lastSeen so PruneStale doesn't evict this peer.
+  auto existing = std::find_if(Peers.begin(), Peers.end(), [&](Peer& p){
+    return p.GetMAC() == source;
+  });
+  if (existing != Peers.end()) existing->UpdateLastSeen();
 }
 
 // HandleACK:
@@ -229,8 +275,10 @@ void HandleACK(const esp_now_recv_info* info, const Message message) {
   Serial.print("DBG: Recieved ACK Message from: ");
   Serial.println(source.to_cstr());
 #endif
-  
-  if (message.header.id == ackId) {
+
+  if (!waitingForAck) return; // Spurious ACK from an intermediate forwarding hop; ignore.
+
+  if (message.id == ackId) {
     waitingForAck = false;
   } else {
     Serial.println("ERR: ACK id did not match message");
@@ -238,29 +286,67 @@ void HandleACK(const esp_now_recv_info* info, const Message message) {
 }
 
 // HandleText:
-// Handle incoming Text messages: send ACK back to sender if known.
+// Handle incoming Text messages.
+// If the message's destination is not this node, forward it toward its destination via the
+// routing table (decrementing TTL). Otherwise deliver locally and ACK the immediate sender.
 void HandleText(const esp_now_recv_info* info, const Message message) {
-  Message ack_message;
-  auto mac = GetMACAddress();
-  memcpy(ack_message.header.source, mac.GetAddressArray(), 6);
-  memcpy(ack_message.header.target, message.header.source, 6);
-  ack_message.header.type = MessageType::ACK;
-  ack_message.header.id = message.header.id;
-  SendMessage(ack_message);
+  MAC sender = GetSenderMAC(info);
+  MAC dst(std::vector<uint8_t>(message.dst, message.dst + 6));
+  MAC src(std::vector<uint8_t>(message.src, message.src + 6));
 
-  auto sourceMac = MAC(std::vector<uint8_t>(message.header.source, message.header.source + 6));
-  MAC targetMac = MAC(std::vector<uint8_t>(message.header.target, message.header.target + 6));
-  if (isPager && targetMac == GetMACAddress()){
-    //TODO: improve the format sent to end user
-    Serial.println("parsing message...");
+  // ACK the immediate sender regardless of whether we're the final destination.
+  // This lets each hop's retry loop clear without waiting for end-to-end delivery.
+  auto sender_peer = FindPeer(sender);
+  if (sender_peer.has_value()) {
+    Message ack = {};
+    ack.type = MessageType::ACK;
+    ack.id = message.id;
+    memcpy(ack.src, SelfMAC.GetAddressArray(), 6);
+    memcpy(ack.dst, sender.GetAddressArray(), 6);
+    ack.ttl = 1;
+    SendMessage(*sender_peer, ack);
+  } else {
+    Serial.println("ERR: Sender peer not in peer list.");
+  }
+
+  // Forward if we are not the final destination.
+  if (dst != SelfMAC && dst != BroadcastMAC) {
+    if (message.ttl == 0) {
+      Serial.println("ERR: TTL expired, dropping message");
+      return;
+    }
+    auto nextHop = FindNextHop(dst);
+    if (!nextHop.has_value()) {
+      Serial.print("ERR: No route to ");
+      Serial.println(dst.to_cstr());
+      return;
+    }
+    Message fwd = message;
+    fwd.ttl--;
+    SendMessage(*nextHop, fwd);
+#ifdef DEBUG
+    Serial.print("DBG: Forwarded to ");
+    Serial.println(nextHop->GetMAC().to_cstr());
+#endif
+    return;
+  }
+
+  // Deliver locally.
+  if (isPager){
+    Serial.println("receiving message...");
     size_t len = strnlen(message.info, MessageSize);
     std::string text(message.info, len);
-    std::string sourceStr = sourceMac.to_string();
+    std::string sourceStr = src.to_string();
     std::string ret = 'm' + sourceStr + text;
-    
+
     Serial.print("Forwarding to app: ");
     Serial.println(ret.c_str());
     SendToApp(std::as_bytes(std::span<char>(reinterpret_cast<char *>(ret.data()), ret.size())));
+  } else {
+    Serial.print("MSG from ");
+    Serial.print(src.to_cstr());
+    Serial.print(": ");
+    Serial.println(message.info);
   }
 }
 
@@ -290,6 +376,9 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
       Serial.println(message.to_cstr());
       HandleText(info, message);
       break;
+    case MessageType::PeerList:
+      HandlePeerList(info, message);
+      break;
     case MessageType::Invalid:
     default:
       Serial.print("Invalid Message Recieved: ");
@@ -298,39 +387,149 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   }
 }
 
+/*
+// not sure what this is meant to do, not sure if we should do this either since we should send to
+// server (and it handles sending to unconnected peers) not all peers
+void SendToAllPeers(String msg) {
+  auto it = std::find_if(Peers.begin(), Peers.end(), [&](const Peer& p) {
+    SendTextMessage(p.GetMAC(), msg);
+    return p.GetMAC() == source;
+  });
+}
+ */
+
+// PruneStale:
+// Remove peers that have not sent a discovery heartbeat within PEER_TIMEOUT_MS.
+// Also evicts any routing table entries whose next-hop was through the removed peer.
+void PruneStale() {
+  auto it = Peers.begin();
+  while (it != Peers.end()) {
+    if (it->IsStale(PEER_TIMEOUT_MS)) {
+      MAC staleMac = it->GetMAC();
+      Serial.print("Removing stale peer: ");
+      Serial.println(staleMac.to_cstr());
+
+      esp_now_del_peer(staleMac.GetAddressArray());
+
+      // Remove routing table entries that used this peer as their next hop.
+      RoutingTable.erase(
+        std::remove_if(RoutingTable.begin(), RoutingTable.end(),
+          [&staleMac](const std::pair<MAC, MAC>& r){ return r.second == staleMac; }),
+        RoutingTable.end()
+      );
+
+      it = Peers.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
+
+// FindNextHop:
+// Return the Peer to send to in order to reach dst.
+// Checks direct peers first; falls back to RoutingTable for multi-hop paths.
+std::optional<Peer> FindNextHop(MAC dst) {
+  auto direct = FindPeer(dst);
+  if (direct.has_value()) return direct;
+
+  for (auto& route : RoutingTable) {
+    if (route.first == dst) {
+      return FindPeer(route.second);
+    }
+  }
+
+  return std::nullopt;
+}
+
+// SendPeerList:
+// Serialize this node's direct peer list into a PeerList message and send it to target.
+// The receiver uses this to populate its routing table for multi-hop delivery.
+void SendPeerList(Peer target) {
+  if (Peers.empty()) return;
+
+  Message msg = {};
+  msg.type = MessageType::PeerList;
+  msg.id = 0;
+  memcpy(msg.src, SelfMAC.GetAddressArray(), 6);
+  memcpy(msg.dst, target.GetMAC().GetAddressArray(), 6);
+  msg.ttl = 1; // Peer list is direct-neighbor information only
+
+  uint8_t count = (uint8_t)std::min(Peers.size(), (size_t)((MessageSize - 1) / 6));
+  msg.info[0] = (char)count;
+  for (uint8_t i = 0; i < count; i++) {
+    memcpy(msg.info + 1 + i * 6, Peers[i].GetMAC().GetAddressArray(), 6);
+  }
+
+  bool success = SendMessage(target, msg);
+  Serial.println(success ? "Peer list sent" : "ERR: Failed to send peer list");
+}
+
+// HandlePeerList:
+// Parse a PeerList message from a direct neighbor and add entries to the routing table.
+// For each MAC in the list that is not already directly reachable, record the sender as
+// the next hop, enabling multi-hop delivery through that neighbor.
+void HandlePeerList(const esp_now_recv_info* info, const Message message) {
+  MAC sender = GetSenderMAC(info);
+#ifdef DEBUG
+  Serial.print("DBG: Received PeerList from: ");
+  Serial.println(sender.to_cstr());
+#endif
+
+  uint8_t count = (uint8_t)message.info[0];
+  for (uint8_t i = 0; i < count; i++) {
+    std::vector<uint8_t> macBytes(
+      (const uint8_t*)message.info + 1 + i * 6,
+      (const uint8_t*)message.info + 1 + i * 6 + 6
+    );
+    MAC peerMAC(macBytes);
+
+    if (peerMAC == SelfMAC) continue;
+    if (FindPeer(peerMAC).has_value()) continue; // Already directly reachable
+
+    // Check if a route to this MAC is already known
+    bool routeExists = false;
+    for (auto& route : RoutingTable) {
+      if (route.first == peerMAC) { routeExists = true; break; }
+    }
+
+    if (!routeExists) {
+      RoutingTable.emplace_back(peerMAC, sender);
+      Serial.print("Route: ");
+      Serial.print(peerMAC.to_cstr());
+      Serial.print(" via ");
+      Serial.println(sender.to_cstr());
+    }
+  }
+}
+
 // SendTextMessage:
-// Split a long text string into MessageSize chunks and send each chunk as a Text
-// message using SendMessageWithRetry; returns overall success.
+// Split a long text string into MessageSize chunks and send each chunk as a Text message using
+// SendMessageWithRetry. Resolves the next-hop peer via direct peer list or routing table.
+// Falls back to broadcast when no route is known.
 bool SendTextMessage(MAC receiver, String msg) {
-  Message message;
-  message.header.type = MessageType::Text;
-  memcpy(message.header.target, receiver.GetAddressArray(), 6);
-  memcpy(message.header.source, GetMACAddress().GetAddressArray(), 6);
+  auto nextHop = FindNextHop(receiver);
+
+  if (!nextHop.has_value()) {
+    Serial.print("No route to ");
+    Serial.println(receiver.to_cstr());
+    Serial.println("Broadcasting...");
+  }
+
+  Message message = {};
+  message.type = MessageType::Text;
+  memcpy(message.src, SelfMAC.GetAddressArray(), 6);
+  memcpy(message.dst, receiver.GetAddressArray(), 6);
+  message.ttl = 5; // Allow up to 5 hops
   bool success = true;
   printf("Sending text message: %s\n", msg.c_str());
 
-  // Iterate over entire message
-  const auto split_message_size = MessageSize - 1; // Leave space for null terminator
-  for (int i = 0; msg.length() > i * split_message_size; i++) {
-    // Copy the message plus some offset up to message size
-    auto message_chunk_size = std::min(static_cast<size_t>(split_message_size), msg.length() - i * split_message_size);
-
-    auto substring = msg.substring(i * split_message_size, i * split_message_size + message_chunk_size);
-    Serial.print("Sending message chunk size: " + String(message_chunk_size) + " | chunk: " + substring + "\n");
-    
-    Serial.print("Message before copying chunk: ");
-    Serial.println(message.to_cstr());
-
-    strncpy(message.info, substring.c_str(), message_chunk_size);  // Prevents buffer overflow
-    message.info[message_chunk_size] = '\0'; // Null-terminate the message chunk
-    message.header.id = i;
-
-    Serial.println("Message after copying chunk: " + String(message.info));
-
-    Serial.print("Sending split message number (after copying chunk) " + String(i) + " : ");
-    Serial.println(message.to_cstr());
-    // Broadcast if message doesn't get to sender
-    success = SendMessageWithRetry(message) && success;
+  for (int i = 0; msg.length() > (size_t)(i * MessageSize); i++) {
+    strncpy(message.info, msg.c_str() + i * MessageSize, MessageSize);
+    message.id = i;
+#ifdef DEBUG
+    Serial.println("DBG: Sending message");
+#endif
+    success = SendMessageWithRetry(nextHop.value_or(BroadcastPeer), message) && success;
     if (!success) {
       Serial.println("ERR: Failed to send text message.");
     }

@@ -14,9 +14,6 @@ Author: Team 2
 Creation Date: 02/26/2026
 */
 
-// Build as BLE-only pager (no Mesh/Helpers.hpp); BLE.hpp provides stubs for BroadcastPeer/SendTextMessage.
-#define PAGER_BLE_STANDALONE
-
 // Custom Libraries
 #include "../BLE.hpp"
 
@@ -25,18 +22,22 @@ Creation Date: 02/26/2026
 #include <span>
 
 // setup:
-// Initialize BLE with a test suffix for the device name.
+// Initialize mesh stack in pager mode, then bring up BLE.
 void setup() {
   delay(300);  // let boot settle so serial monitor shows clean output
-  InitializeBLE("Test");
+  SetPagerMode();       // sets isPager = true so HandleText forwards to BLE
+  InitializeESPNow();   // initializes WiFi STA, ESP-NOW, broadcast peer, and rx callback
+
+  // Append last 2 bytes of MAC as a unique 4-char hex suffix, e.g. "Meshenger-Pager-A403"
+  char suffix[7];
+  uint8_t* macBytes = SelfMAC.GetAddressArray();
+  snprintf(suffix, sizeof(suffix), "-%02X%02X", macBytes[4], macBytes[5]);
+  InitializeBLE(String(suffix));
 }
 
 // loop:
-// Forward serial input to connected BLE client.
+// Periodically announce presence on the mesh so nodes can discover the pager.
 void loop() {
-  if (Serial.available() && IsConnected()){
-    String input = Serial.readString();
-    SendToApp(std::as_bytes(std::span<char>(input)));
-  }
-  delay(20);
+  AnnouceMAC();
+  delay(2000);
 }

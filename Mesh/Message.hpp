@@ -35,6 +35,7 @@ typedef enum MessageType {
   Text,
   ACK,
   NACK,
+  PeerList,  // Share known peers for multi-hop routing
   Invalid,
 } MessageType;
 
@@ -46,17 +47,17 @@ struct MessageHeader {
 };
 // MessageSize:
 // Size of the payload buffer for a Message, computed from ESP-NOW max payload less header fields.
-static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - sizeof(MessageHeader);
+// Accounts for routing fields: src (6), dst (6), ttl (1).
+static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - (sizeof(int) + sizeof(MessageType) + 6 + 6 + sizeof(uint8_t));
 
 // Message:
-// Container for a mesh message including type, id and a fixed-size payload buffer.
-// Also provides simple formatting helpers for logging.
-#pragma pack(push, 1)
-struct Message {
-  public:
+// Container for a mesh message including type, id, routing header, and a fixed-size payload buffer.
+// src/dst carry the original source and final destination MACs for multi-hop routing.
+// ttl limits the number of hops a message may traverse.
+typedef struct Message {
     std::string to_string() const {
-      char buf[1000];
-      sprintf(buf, "Type: %d | ID: %d | Source: %02x:%02x:%02x:%02x:%02x:%02x | Target: %02x:%02x:%02x:%02x:%02x:%02x | Message: %s\n", header.type, header.id, header.source[0], header.source[1], header.source[2], header.source[3], header.source[4], header.source[5], header.target[0], header.target[1], header.target[2], header.target[3], header.target[4], header.target[5], info);
+      char buf[300];
+      sprintf(buf, "Type: %d | ID: %d | TTL: %d | Message: %s\n", type, id, ttl, info);
       return std::string(buf);
     }
 
@@ -64,7 +65,11 @@ struct Message {
       return to_string().c_str();
     }
 
-    MessageHeader header;
+    MessageType type;
+    int id;
+    uint8_t src[6];   // Original source MAC
+    uint8_t dst[6];   // Final destination MAC
+    uint8_t ttl;      // Hops remaining; decremented on each forward
     char info[MessageSize];
 };
 #pragma pack(pop)
