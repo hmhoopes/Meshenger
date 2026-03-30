@@ -5,7 +5,7 @@ It connects to a nearby ESP32 “LocalESP” device over **Bluetooth Low Energy 
 
 - A **Peers** view for managing connections.
 - A **Messages** view (chat window) for the selected peer.
-- A **Settings** view with simple toggles (notification sounds, brightness).
+- A **Settings** view: **appearance** (theme, text size), optional receive sound, and higher brightness (saved in `localStorage`).
 
 The web app is a single HTML page (`index.html`) using plain **HTML/CSS/JavaScript** and the **Web Bluetooth API** (no frontend framework).
 
@@ -19,7 +19,7 @@ The web app is a single HTML page (`index.html`) using plain **HTML/CSS/JavaScri
 - Organizes the UI into three main sections:
   - **Peers**: list of known/available peers you can start a chat with.
   - **Messages**: dedicated chat window for the currently selected peer.
-  - **Settings**: toggles for notification sounds and a high-brightness display mode (wired for future behavior).
+  - **Settings**: theme (dark / light / match system), text size, optional sound on receive, higher brightness.
 
 Today, messages go between the browser and LocalESP; the LocalESP → mesh forwarding is handled in the firmware.
 
@@ -71,8 +71,8 @@ From the repo root:
 4. Click **Connect to device**, select your ESP32 in the Web Bluetooth device picker, and connect.
 5. Use the **Peers** view to select a peer and open a dedicated chat window.
 6. In the **Messages** view, type a message and press Enter or **Send**.  
-   The message is sent over BLE to the ESP32; any replies from the device appear as received bubbles.
-7. In **Settings**, toggle notification sounds and high-brightness display (hooks for future UX behavior).
+   The chat scrolls while BLE chunks are written. If sending fails or the device drops mid-send, the bubble shows **Not delivered** with **Retry**.
+7. In **Settings**, adjust theme and text size; toggle sound and brightness.
 
 ---
 
@@ -96,5 +96,5 @@ Key points:
 - All UI logic lives in `App/index.html`:
   - DOM structure for the three sections (Peers / Messages / Settings).
   - Web Bluetooth connection and NUS read/write logic.
-  - Simple in-memory state for selected peer and current section.
+  - In-memory peers/messages; outgoing delivery state (pending / sent / failed); appearance in `localStorage`.
 
