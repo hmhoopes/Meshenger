@@ -5,7 +5,7 @@
 Meshenger is a secure, decentralized messaging system built on ESP32 devices. It enables peer-to-peer communication through a mesh network using ESP-NOW for long-range connectivity, with a BLE pager acting as a bridge to a web-based user interface. The system supports encrypted messaging via cryptographic utilities, allowing users to send messages across a network of nodes without relying on centralized servers.
 
 ### Diagram:
-![Architecture Diagram|600](./Network_Diagram.png)
+![Architecture Diagram|600](./refactoring_diagram.png)
 
 ## Table of Contents
 

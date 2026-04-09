@@ -63,7 +63,7 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
 bool SendTextMessage(MAC receiver, String msg);
 extern Peer BroadcastPeer;
 
-#include "../Pager/BLE.hpp"
+#include "BLE.hpp"
 
 //================================== Forward Decls ===============================================
 void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
@@ -361,7 +361,7 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
   Message message;
   memcpy(&message, incomingData, sizeof(Message));
 
-  switch (message.header.type){
+  switch (message.type){
     case MessageType::ACK:
       HandleACK(info, message);
       break;

@@ -90,9 +90,14 @@ int ackId = -1;
 // SendMessage:
 // Sends a message to the target via ESP-NOW without higher-level ACK/retry handling.
 // Returns true on esp_now_send success.
-bool SendMessage(const Message message) {
+bool SendMessage(Peer target, const Message message) {
+  if (!target.IsAdded()){
+    Serial.print("ERR: Cannot send message to unadded peer target: ");
+    Serial.println(target.mac.to_cstr());
+    return false;
+  }
   // Send message via ESP-NOW
-  esp_err_t result = esp_now_send(BroadcastPeer.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
+  esp_err_t result = esp_now_send(target.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
 
   // Only ACKs at MAC level
   return result == ESP_OK;
@@ -101,12 +106,17 @@ bool SendMessage(const Message message) {
 // SendMessageWithRetry:
 // Sends a message and blocks (with retries) until an ACK is received or the retry limit is reached.
 // Uses TIMEOUT and MAX_RETRY to control behavior.
-bool SendMessageWithRetry(const Message message) {
+bool SendMessageWithRetry(Peer target, const Message message) {
+  if (!target.IsAdded()){
+    Serial.print("ERR: Cannot send message to unadded peer target: ");
+    Serial.println(target.mac.to_cstr());
+    return false;
+  }
   // Send message via ESP-NOW
-  esp_err_t result = esp_now_send(BroadcastPeer.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
+  esp_err_t result = esp_now_send(target.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
 
   waitingForAck = true;
-  ackId = message.header.id;
+  ackId = message.id;
   unsigned long sendTime = millis(); // Message send start send time
   int retryCount = 0; // Count the number of times we've retried
 
@@ -125,7 +135,7 @@ bool SendMessageWithRetry(const Message message) {
       }
       retryCount++;
       Serial.printf("DBG: Resending message - attempt %d\n", retryCount);
-      result = esp_now_send(BroadcastPeer.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
+      result = esp_now_send(target.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
       sendTime = millis();
       waitingForAck = true;
     }

@@ -15,8 +15,8 @@ Creation Date: 02/28/2026
 */
 
 // Custom library headers
-#include "../BLE.hpp"
-#include "../../Mesh/Helpers.hpp"
+#include "../../BLE.hpp"
+#include "../../Helpers.hpp"
 
 #include <memory>
 
