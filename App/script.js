@@ -287,4 +287,104 @@ function InitialSetup() {
   setSection('peers');
 }
 
-InitialSetup();
+//=========================================================================================================
+// --- Crypto Functions ---
+//=========================================================================================================
+
+import { ed25519, x25519 } from "https://esm.sh/@noble/curves@1.4.0/ed25519";
+import { edwardsToMontgomeryPriv, edwardsToMontgomeryPub } from "https://esm.sh/@noble/curves@1.4.0/ed25519";
+
+/* ── utils ── */
+const toHex   = (b) => Array.from(b).map(x => x.toString(16).padStart(2,"0")).join("");
+const fromHex = (h) => new Uint8Array(h.match(/.{2}/g).map(b => parseInt(b,16)));
+
+/* ── derive Ed25519 keypair from password ── */
+async function deriveKeyPair(password, salt) {
+  const keyMaterial = await crypto.subtle.importKey(
+    "raw", new TextEncoder().encode(password),
+    "PBKDF2", false, ["deriveBits"]
+  );
+  const seedBuffer = await crypto.subtle.deriveBits(
+    { name: "PBKDF2", salt: new TextEncoder().encode(salt), iterations: 600_000, hash: "SHA-256" },
+    keyMaterial, 256
+  );
+  const seed = new Uint8Array(seedBuffer);
+  return {
+    edPriv: seed,
+    edPub:  ed25519.getPublicKey(seed),
+  };
+}
+
+/* ── convert Ed25519 → X25519 ── */
+function toX25519(edPriv, edPub) {
+  return {
+    xPriv: edwardsToMontgomeryPriv(edPriv),
+    xPub:  edwardsToMontgomeryPub(edPub),
+  };
+}
+
+/* ── ECDH shared secret → AES-GCM key ── */
+async function sharedAesKey(myXPriv, theirXPub) {
+  const raw = x25519.getSharedSecret(myXPriv, theirXPub);
+  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
+}
+
+/* ── encrypt ── */
+async function encrypt(aesKey, plaintext) {
+  const iv   = crypto.getRandomValues(new Uint8Array(12));
+  const data = new TextEncoder().encode(plaintext);
+  const ct   = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, data);
+  return { iv: toHex(iv), ct: toHex(new Uint8Array(ct)) };
+}
+
+/* ── decrypt ── */
+async function decrypt(aesKey, { iv, ct }) {
+  const plain = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv: fromHex(iv) },
+    aesKey,
+    fromHex(ct)
+  );
+  return new TextDecoder().decode(plain);
+}
+
+//----------------------------------------------------------------------------------------------------
+// Example usage:
+//----------------------------------------------------------------------------------------------------
+/****************************************************************************************************/
+//this is example of enc/dec functions
+/* const salt = "my-app-salt-v1";
+
+// Alice derives her keypair
+const alice = await deriveKeyPair("alice-password", salt);
+const aliceX = toX25519(alice.edPriv, alice.edPub);
+
+// Bob derives his keypair
+const bob = await deriveKeyPair("bob-password", salt);
+const bobX = toX25519(bob.edPriv, bob.edPub);
+
+// Each side computes the shared secret independently
+const aliceAes = await sharedAesKey(aliceX.xPriv, bobX.xPub);
+const bobAes   = await sharedAesKey(bobX.xPriv, aliceX.xPub);
+
+// Alice encrypts
+const encrypted = await encrypt(aliceAes, "hello bob!");
+console.log("encrypted:", encrypted);
+
+// Bob decrypts
+const decrypted = await decrypt(bobAes, encrypted);
+console.log("decrypted:", decrypted); // "hello bob!" */
+
+/****************************************************************************************************/
+//this is example of verification
+/*const { privateKey, publicKey } = await deriveKeyPair("password", "salt");
+
+const message = new TextEncoder().encode("hello world");
+
+// Sign
+const privBytes = bytesFromHex(privateKey);
+const signature = ed25519.sign(message, privBytes);
+
+// Verify
+const pubBytes = bytesFromHex(publicKey);
+const valid = ed25519.verify(signature, message, pubBytes);
+console.log(valid); // true*/
