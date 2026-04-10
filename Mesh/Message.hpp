@@ -18,7 +18,7 @@ Creation Date: 02/17/2026
 #define MESH_MESSAGE_HPP
 
 #include "MAC.hpp"
-#include "Helpers.hpp"
+#include "Peer.hpp"
 
 // WiFi & ESP Headers
 #include <esp_now.h>

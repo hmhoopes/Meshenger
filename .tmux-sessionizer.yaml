@@ -1,0 +1,5 @@
+name: mesh
+windows:
+  - nvim: 
+  - terminal:
+  - claude: claude

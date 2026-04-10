@@ -35,13 +35,13 @@ Creation Date: 02/11/2026
 
 // Helper files
 #include "MAC.hpp"
+#include "Peer.hpp"
 
 extern MAC BroadcastMAC;
 extern Peer BroadcastPeer;
 
 // Helper files cont'd
 #include "Message.hpp"
-#include "Peer.hpp"
 
 // forward decls
 std::span<const std::byte> PeersJSON();
@@ -61,7 +61,6 @@ void SendPeerList(Peer target);
 void PruneStale();
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 bool SendTextMessage(MAC receiver, String msg);
-extern Peer BroadcastPeer;
 
 #include "BLE.hpp"
 

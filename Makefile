@@ -11,7 +11,7 @@ FQBN      =  esp32:esp32:esp32:PartitionScheme=$(PARTITION)
 PORT      ?= /dev/ttyUSB0
 BAUD      ?= 115200
 
-BUILD_DIR ?= ./Mesh/Node/node
+BUILD_DIR ?= ./Mesh/Nodes/node
 
 .PHONY: build upload monitor lsp-index tui
 
@@ -35,7 +35,7 @@ monitor:
 tui:
 	python3 ./monitor.py $(PORT) $(BAUD)
 
-flash: upload monitor
+flash: upload tui
 
 # Regenerate LSP compile_commands.json
 lsp-index:
