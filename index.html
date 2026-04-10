@@ -8,8 +8,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
-    html[data-theme="dark"],
-    html:not([data-theme]) {
+    /* Theme: dark background, accent green, danger red for disconnect */
+    :root {
       --bg: #0d0f12;
       --surface: #161a20;
       --border: #2a3038;
@@ -18,39 +18,7 @@
       --accent: #3fb950;
       --accent-dim: #238636;
       --danger: #f85149;
-      --warning: #d29922;
       --radius: 10px;
-      --msg-font: 0.95rem;
-      --input-font: 0.9rem;
-      --title-font: 1.25rem;
-    }
-
-    html[data-theme="light"] {
-      --bg: #f0f3f6;
-      --surface: #ffffff;
-      --border: #d1d9e0;
-      --text: #1f2328;
-      --text-muted: #656d76;
-      --accent: #1a7f37;
-      --accent-dim: #2da44e;
-      --danger: #cf222e;
-      --warning: #9a6700;
-      --radius: 10px;
-      --msg-font: 0.95rem;
-      --input-font: 0.9rem;
-      --title-font: 1.25rem;
-    }
-
-    html[data-font-scale="compact"] {
-      --msg-font: 0.85rem;
-      --input-font: 0.8rem;
-      --title-font: 1.1rem;
-    }
-
-    html[data-font-scale="comfortable"] {
-      --msg-font: 1.05rem;
-      --input-font: 1rem;
-      --title-font: 1.35rem;
     }
 
     * {
@@ -67,11 +35,6 @@
       min-height: 100vh;
       display: flex;
       flex-direction: column;
-      transition: background 0.2s, color 0.2s, filter 0.2s;
-    }
-
-    body.high-brightness {
-      filter: brightness(1.12) contrast(1.05);
     }
 
     /* Top bar: title + connection status */
@@ -85,7 +48,7 @@
     }
 
     h1 {
-      font-size: var(--title-font);
+      font-size: 1.25rem;
       font-weight: 600;
       letter-spacing: -0.02em;
     }
@@ -117,7 +80,6 @@
       flex: 1;
       display: flex;
       flex-direction: column;
-      min-height: 0;
       max-width: 640px;
       margin: 0 auto;
       width: 100%;
@@ -157,17 +119,6 @@
       display: block;
     }
 
-    #view-messages.view-active {
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      min-height: 0;
-    }
-
-    #view-messages .section-title {
-      flex-shrink: 0;
-    }
-
     .section-title {
       font-size: 0.9rem;
       font-weight: 500;
@@ -201,13 +152,12 @@
     /* Scrollable list of message bubbles */
     #messages {
       flex: 1;
-      min-height: 0;
       overflow-y: auto;
       padding: 1rem 0;
       display: flex;
       flex-direction: column;
       gap: 0.75rem;
-      scroll-behavior: smooth;
+      min-height: 200px;
     }
 
     /* Base bubble style; .sent and .received control side + color */
@@ -215,39 +165,9 @@
       max-width: 85%;
       padding: 0.6rem 0.9rem;
       border-radius: var(--radius);
-      font-size: var(--msg-font);
+      font-size: 0.95rem;
       line-height: 1.4;
       word-break: break-word;
-    }
-
-    .message.sent.delivery-pending {
-      opacity: 0.85;
-      border: 1px dashed var(--text-muted);
-    }
-
-    .message.sent.delivery-failed {
-      border: 1px solid var(--danger);
-      background: var(--accent-dim);
-      box-shadow: inset 0 0 0 1px rgba(248, 81, 73, 0.2);
-    }
-
-    html[data-theme="light"] .message.sent.delivery-failed {
-      background: #ffebe9;
-    }
-
-    .message .delivery-label {
-      font-size: 0.7rem;
-      color: var(--text-muted);
-      margin-top: 0.35rem;
-    }
-
-    .message.sent.delivery-failed .delivery-label {
-      color: var(--danger);
-      font-weight: 600;
-    }
-
-    .message.sent.delivery-pending .delivery-label {
-      color: var(--warning);
     }
 
     .message.sent {
@@ -291,7 +211,6 @@
 
     /* Message input row; .disabled hides Send when not connected */
     .compose {
-      flex-shrink: 0;
       padding: 1rem 0 1.5rem;
       border-top: 1px solid var(--border);
     }
@@ -309,7 +228,7 @@
       border-radius: var(--radius);
       color: var(--text);
       font-family: 'JetBrains Mono', monospace;
-      font-size: var(--input-font);
+      font-size: 0.9rem;
       padding: 0.65rem 1rem;
       outline: none;
       transition: border-color 0.15s;
@@ -391,52 +310,6 @@
     .compose.disabled #btnSend {
       display: none;
     }
-
-    .settings-group {
-      margin-bottom: 1.25rem;
-    }
-
-    .settings-group h3 {
-      font-size: 0.75rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--text-muted);
-      margin-bottom: 0.5rem;
-    }
-
-    .settings-row {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      font-size: 0.9rem;
-      margin-bottom: 0.5rem;
-    }
-
-    .settings-row select {
-      flex: 1;
-      max-width: 220px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      color: var(--text);
-      padding: 0.4rem 0.5rem;
-      font-family: inherit;
-      font-size: 0.85rem;
-    }
-
-    .btn-retry {
-      margin-top: 0.35rem;
-      padding: 0.25rem 0.5rem;
-      font-size: 0.75rem;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-    }
-
-    .btn-retry:hover:not(:disabled) {
-      border-color: var(--accent);
-    }
   </style>
 </head>
 <body>
@@ -482,40 +355,17 @@
       </div>
     </section>
 
+    <!-- Settings view: notification sound + brightness toggles -->
     <section id="view-settings" class="view">
       <h2 class="section-title">Settings</h2>
-
-      <div class="settings-group">
-        <h3>Appearance</h3>
-        <label class="settings-row">
-          Theme
-          <select id="settingTheme" aria-label="Color theme">
-            <option value="dark">Dark</option>
-            <option value="light">Light</option>
-            <option value="system">Match system</option>
-          </select>
-        </label>
-        <label class="settings-row">
-          Text size
-          <select id="settingFontScale" aria-label="Text size">
-            <option value="compact">Compact</option>
-            <option value="normal" selected>Default</option>
-            <option value="comfortable">Comfortable</option>
-          </select>
-        </label>
-      </div>
-
-      <div class="settings-group">
-        <h3>Feedback</h3>
-        <label class="settings-row">
-          <input type="checkbox" id="settingSounds" checked>
-          Notification sound on new message
-        </label>
-        <label class="settings-row">
-          <input type="checkbox" id="settingBrightness" checked>
-          Higher display brightness
-        </label>
-      </div>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.9rem;margin-bottom:0.5rem;">
+        <input type="checkbox" id="settingSounds" checked>
+        Notification sounds
+      </label>
+      <label style="display:flex;align-items:center;gap:0.5rem;font-size:0.9rem;">
+        <input type="checkbox" id="settingBrightness" checked>
+        High display brightness
+      </label>
     </section>
   </main>
 
@@ -550,19 +400,11 @@
     const messagesView = document.getElementById('view-messages');
     const settingsView = document.getElementById('view-settings');
     const chatPeerLabel = document.getElementById('chatPeerLabel');
-    const settingTheme = document.getElementById('settingTheme');
-    const settingFontScale = document.getElementById('settingFontScale');
     const settingSounds = document.getElementById('settingSounds');
     const settingBrightness = document.getElementById('settingBrightness');
-
-    const LS_THEME = 'meshenger-theme';
-    const LS_FONT = 'meshenger-font-scale';
-    const LS_SOUNDS = 'meshenger-sounds';
-    const LS_BRIGHT = 'meshenger-brightness';
-
-    // peers[].messages[]: { id, content, sent, delivery?: 'pending'|'sent'|'failed' }
+    
+    //format for peers: "name", where name is peer's MAC, "messages", where message is an array of message strings from that peer
     let peers = [];
-    let nextMsgId = 1;
 
     // BLE connection state
     let device = null;
@@ -575,56 +417,6 @@
     // UI state
     let currentSection = 'peers';
     let currentPeerId = null;
-
-    function loadSettingsFromStorage() {
-      settingTheme.value = localStorage.getItem(LS_THEME) || 'dark';
-      settingFontScale.value = localStorage.getItem(LS_FONT) || 'normal';
-      settingSounds.checked = localStorage.getItem(LS_SOUNDS) !== '0';
-      settingBrightness.checked = localStorage.getItem(LS_BRIGHT) !== '0';
-    }
-
-    function resolveTheme() {
-      const v = settingTheme.value;
-      if (v === 'system') {
-        return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-      }
-      return v;
-    }
-
-    function applyAppearance() {
-      document.documentElement.setAttribute('data-theme', resolveTheme());
-      const fs = settingFontScale.value;
-      if (fs === 'normal') {
-        document.documentElement.removeAttribute('data-font-scale');
-      } else {
-        document.documentElement.setAttribute('data-font-scale', fs);
-      }
-      document.body.classList.toggle('high-brightness', settingBrightness.checked);
-    }
-
-    function playReceiveSound() {
-      if (!settingSounds.checked) return;
-      try {
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if (!Ctx) return;
-        const ctx = new Ctx();
-        const o = ctx.createOscillator();
-        const g = ctx.createGain();
-        o.connect(g);
-        g.connect(ctx.destination);
-        o.frequency.value = 740;
-        g.gain.setValueAtTime(0.06, ctx.currentTime);
-        g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.12);
-        o.start(ctx.currentTime);
-        o.stop(ctx.currentTime + 0.12);
-      } catch (_) {}
-    }
-
-    function scrollMessagesToBottom() {
-      requestAnimationFrame(() => {
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-      });
-    }
 
     /** Switch between Peers, Messages, and Settings sections */
     function setSection(section) {
@@ -655,19 +447,17 @@
     function selectPeer(peerId) {
       currentPeerId = peerId;
       const peer = peers.find(p => p.name === peerId);
-      if (!peer) return;
-      chatPeerLabel.textContent = `Chat with ${peer.name}`;
+      chatPeerLabel.textContent = peer ? `Chat with ${peer.name}` : 'Chat';
+      // Highlight active peer
       const buttons = peersListEl.querySelectorAll('button');
       buttons.forEach(btn => {
-        btn.classList.toggle('active', btn.textContent === peer.name);
+        btn.classList.toggle('active', btn.textContent === (peer.name));
       });
-      messagesEl.replaceChildren();
-      peer.messages.forEach((message) => {
-        if (!message.id) message.id = 'm' + nextMsgId++;
-        const delivery = message.sent ? (message.delivery || 'sent') : undefined;
-        appendMessageEl(message.content, message.sent, { id: message.id, delivery });
+      messagesEl.replaceChildren(); // clear messages when switching peers
+      console.log(peer.messages);
+      peer.messages.forEach(message => {
+        appendMessage(message.content, message.sent);
       });
-      scrollMessagesToBottom();
       setSection('messages');
     }
 
@@ -683,49 +473,15 @@
       compose.classList.toggle('disabled', !connected);  // shows/hides Send button
     }
 
-    function updateMessageEl(msgId, { delivery }) {
-      const el = messagesEl.querySelector(`[data-msg-id="${msgId}"]`);
-      if (!el || !el.classList.contains('sent')) return;
-      el.classList.remove('delivery-pending', 'delivery-failed');
-      if (delivery === 'pending') el.classList.add('delivery-pending');
-      if (delivery === 'failed') el.classList.add('delivery-failed');
-      const label = el.querySelector('.delivery-label');
-      el.querySelectorAll('.btn-retry').forEach((b) => b.remove());
-      if (!label) return;
-      if (delivery === 'pending') {
-        label.textContent = 'Sending…';
-        label.style.display = 'block';
-      } else if (delivery === 'failed') {
-        label.textContent = 'Not delivered';
-        label.style.display = 'block';
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'btn-retry';
-        b.textContent = 'Retry';
-        b.addEventListener('click', () => resendMessage(msgId));
-        el.appendChild(b);
-      } else {
-        label.textContent = '';
-        label.style.display = 'none';
-      }
-    }
-
-    function appendMessageEl(text, sent, opts = {}) {
+    /** Add a message bubble (sent or received) and scroll to bottom */
+    function appendMessage(text, sent) {
       emptyState.classList.add('hidden');
-      const id = opts.id != null ? opts.id : 'm' + nextMsgId++;
       const div = document.createElement('div');
-      div.dataset.msgId = id;
       div.className = 'message ' + (sent ? 'sent' : 'received');
       const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      if (sent) {
-        div.innerHTML = `<span class="content">${escapeHtml(text)}</span><div class="time">${time}</div><div class="delivery-label"></div>`;
-        updateMessageEl(id, { delivery: opts.delivery || 'sent' });
-      } else {
-        div.innerHTML = `<span class="content">${escapeHtml(text)}</span><div class="time">${time}</div>`;
-      }
+      div.innerHTML = `<span class="content">${escapeHtml(text)}</span><div class="time">${time}</div>`;
       messagesEl.appendChild(div);
-      scrollMessagesToBottom();
-      return id;
+      messagesEl.scrollTop = messagesEl.scrollHeight;  // keep latest message in view
     }
 
     /** Escape text so it's safe to put in HTML (avoids XSS if ESP32 sends script) */
@@ -827,31 +583,20 @@
             console.log("Processing line from device:", line);
             const trimmed = line.trim();
             console.log("Processing line:", trimmed);
-            if (trimmed && isDisplayableText(trimmed)) {
-              const rcvPeer = peers.find((p) => p.name === targetPeerId);
-              if (rcvPeer) {
-                const mid = appendMessageEl(trimmed, false);
-                rcvPeer.messages.push({ id: mid, content: trimmed, sent: false });
-                playReceiveSound();
+            if (trimmed && isDisplayableText(trimmed)){
+              peer = peers.find(p => p.name === targetPeerId);
+              let sentStatus = false;
+              peer.messages.push({content: trimmed, sent: sentStatus});
+              console.log("peer messages", peer.messages);
+              if (peer.name === currentPeerId) {
+                appendMessage(trimmed, sentStatus);
               }
             }
           });
         });
 
-        device.addEventListener('gattserverdisconnected', () => {
-          if (currentPeerId) {
-            const p = peers.find((x) => x.name === currentPeerId);
-            if (p) {
-              p.messages.forEach((m) => {
-                if (m.sent && m.delivery === 'pending') {
-                  m.delivery = 'failed';
-                  updateMessageEl(m.id, { delivery: 'failed' });
-                }
-              });
-            }
-          }
-          setConnected(false);
-        });
+        // If ESP32 disconnects (e.g. power off), update UI
+        device.addEventListener('gattserverdisconnected', () => setConnected(false));
         setConnected(true);
       } catch (err) {
         // User cancelled the device picker – don't show an error
@@ -862,79 +607,24 @@
       }
     }
 
-    async function bleWritePayloadForPeer(peerObj, trimmed) {
-      if (!rxChar || !server || !server.connected) {
-        throw new Error('Not connected');
-      }
-      const encoder = new TextEncoder();
-      const data = encoder.encode(
-        'm' + peerObj.name + trimmed + '\n' + String.fromCharCode(3)
-      );
-      const chunk = 20;
-      for (let i = 0; i < data.length; i += chunk) {
-        await rxChar.writeValue(data.slice(i, i + chunk));
-        scrollMessagesToBottom();
-      }
-    }
-
-    async function resendMessage(msgId) {
-      const peerObj = peers.find((p) => p.name === currentPeerId);
-      if (!peerObj || !rxChar || sending) return;
-      const rec = peerObj.messages.find((m) => m.id === msgId);
-      if (!rec || !rec.sent) return;
-      sending = true;
-      btnSend.disabled = true;
-      rec.delivery = 'pending';
-      updateMessageEl(msgId, { delivery: 'pending' });
-      scrollMessagesToBottom();
-      try {
-        await bleWritePayloadForPeer(peerObj, rec.content);
-        rec.delivery = 'sent';
-        updateMessageEl(msgId, { delivery: 'sent' });
-      } catch (err) {
-        console.error(err);
-        rec.delivery = 'failed';
-        updateMessageEl(msgId, { delivery: 'failed' });
-      } finally {
-        sending = false;
-        btnSend.disabled = !device || !server || !server.connected;
-      }
-    }
-
-    /** Send text to ESP32 via NUS RX; scrolls during chunked write; marks Not delivered on failure */
+    /** Send text to ESP32 via NUS RX characteristic (chunked for BLE MTU) */
     async function sendMessage(text) {
       const trimmed = text.trim();
       if (!rxChar || !trimmed || sending) return;
-      if (!currentPeerId) {
-        alert('Select a peer in Peers first.');
-        return;
-      }
-      const peerObj = peers.find((p) => p.name === currentPeerId);
-      if (!peerObj) {
-        alert('Unknown peer.');
-        return;
-      }
       sending = true;
       btnSend.disabled = true;
-      const msgId = 'm' + nextMsgId++;
-      peerObj.messages.push({
-        id: msgId,
-        content: trimmed,
-        sent: true,
-        delivery: 'pending',
-      });
-      appendMessageEl(trimmed, true, { id: msgId, delivery: 'pending' });
-      scrollMessagesToBottom();
       try {
-        await bleWritePayloadForPeer(peerObj, trimmed);
-        const rec = peerObj.messages.find((m) => m.id === msgId);
-        if (rec) rec.delivery = 'sent';
-        updateMessageEl(msgId, { delivery: 'sent' });
-      } catch (err) {
-        console.error(err);
-        const rec = peerObj.messages.find((m) => m.id === msgId);
-        if (rec) rec.delivery = 'failed';
-        updateMessageEl(msgId, { delivery: 'failed' });
+        peer = peers.find(p => p.name === currentPeerId);
+        const encoder = new TextEncoder();
+      //encodes with message type 'm' for message, followed by the text and a newline as delimiter
+        const data = encoder.encode('m'+ peer.name + trimmed + '\n' + String.fromCharCode(3)); 
+        const chunk = 20;
+        for (let i = 0; i < data.length; i += chunk) {
+          await rxChar.writeValue(data.slice(i, i + chunk));
+        }
+        let sentStatus = true;
+        peer.messages.push({content: trimmed, sent: sentStatus});
+        appendMessage(trimmed, sentStatus);
       } finally {
         sending = false;
         btnSend.disabled = !device || !server || !server.connected;
@@ -962,41 +652,15 @@
       input.value = '';
     });
 
-    navButtons.forEach((btn) => {
+    // Nav buttons: switch between Peers / Messages / Settings
+    navButtons.forEach(btn => {
       btn.addEventListener('click', () => {
         const section = btn.dataset.section;
         setSection(section);
-        if (section === 'messages') scrollMessagesToBottom();
       });
     });
 
-    settingTheme.addEventListener('change', () => {
-      localStorage.setItem(LS_THEME, settingTheme.value);
-      applyAppearance();
-    });
-    settingFontScale.addEventListener('change', () => {
-      localStorage.setItem(LS_FONT, settingFontScale.value);
-      applyAppearance();
-    });
-    settingSounds.addEventListener('change', () => {
-      localStorage.setItem(LS_SOUNDS, settingSounds.checked ? '1' : '0');
-    });
-    settingBrightness.addEventListener('change', () => {
-      localStorage.setItem(LS_BRIGHT, settingBrightness.checked ? '1' : '0');
-      applyAppearance();
-    });
-
-    (function bindSystemThemeListener() {
-      const mq = window.matchMedia('(prefers-color-scheme: light)');
-      const onChange = () => {
-        if (settingTheme.value === 'system') applyAppearance();
-      };
-      if (mq.addEventListener) mq.addEventListener('change', onChange);
-      else if (mq.addListener) mq.addListener(onChange);
-    })();
-
-    loadSettingsFromStorage();
-    applyAppearance();
+    // Initial render
     renderPeers();
     setSection('peers');
   </script>

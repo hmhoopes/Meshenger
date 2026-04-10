@@ -5,7 +5,7 @@ It connects to a nearby ESP32 “LocalESP” device over **Bluetooth Low Energy 
 
 - A **Peers** view for managing connections.
 - A **Messages** view (chat window) for the selected peer.
-- A **Settings** view: **appearance** (theme, text size), optional receive sound, and higher brightness (saved in `localStorage`).
+- A **Settings** view with simple toggles (notification sounds, brightness).
 
 The web app is a single HTML page (`index.html`) using plain **HTML/CSS/JavaScript** and the **Web Bluetooth API** (no frontend framework).
 
@@ -19,7 +19,7 @@ The web app is a single HTML page (`index.html`) using plain **HTML/CSS/JavaScri
 - Organizes the UI into three main sections:
   - **Peers**: list of known/available peers you can start a chat with.
   - **Messages**: dedicated chat window for the currently selected peer.
-  - **Settings**: theme (dark / light / match system), text size, optional sound on receive, higher brightness.
+  - **Settings**: toggles for notification sounds and a high-brightness display mode (wired for future behavior).
 
 Today, messages go between the browser and LocalESP; the LocalESP → mesh forwarding is handled in the firmware.
 
@@ -71,8 +71,8 @@ From the repo root:
 4. Click **Connect to device**, select your ESP32 in the Web Bluetooth device picker, and connect.
 5. Use the **Peers** view to select a peer and open a dedicated chat window.
 6. In the **Messages** view, type a message and press Enter or **Send**.  
-   The chat scrolls while BLE chunks are written. If sending fails or the device drops mid-send, the bubble shows **Not delivered** with **Retry**.
-7. In **Settings**, adjust theme and text size; toggle sound and brightness.
+   The message is sent over BLE to the ESP32; any replies from the device appear as received bubbles.
+7. In **Settings**, toggle notification sounds and high-brightness display (hooks for future UX behavior).
 
 ---
 
@@ -96,23 +96,5 @@ Key points:
 - All UI logic lives in `App/index.html`:
   - DOM structure for the three sections (Peers / Messages / Settings).
   - Web Bluetooth connection and NUS read/write logic.
-  - In-memory peers/messages; outgoing delivery state (pending / sent / failed); appearance in `localStorage`.
+  - Simple in-memory state for selected peer and current section.
 
-## Web App End-To-End Encryption Scheme
-- Previously implemeted an encryption scheme on each device, but realized it would be better / quicker to encrypt on the web app
-- should probably follow what Signal does
-
-### Useful links:
-- https://en.wikipedia.org/wiki/End-to-end_encryption
-- https://en.wikipedia.org/wiki/Signal_Protocol
-- https://signal.org/docs/ 
-- https://signal.org/docs/specifications/x3dh/
-- https://signal.org/docs/specifications/doubleratchet/
-
-### Scheme
-- follow signal's `Sesame` protocol (here: https://signal.org/docs/specifications/sesame/)
-   - uses X3DH for establishing shared secret, even when one party is offline
-   - uses DoubleRatcheting to continuously switch keys, enabling forward secrecy (even when one party is offline)
-
-### How would groupchats work?
-- groupchats would work by having each sender send a message to each recipient in the groupchat, while the UI makes the messages appear as a groupchat
