@@ -1,3 +1,4 @@
+console.log("Script loaded, initializing app...");
 // --- Nordic UART Service (NUS) ---
 // UUIDs must match LocalESP ble_serial.ino so the browser can find and use the service
 const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
@@ -25,6 +26,16 @@ const settingSounds = document.getElementById('settingSounds');
 const settingBrightness = document.getElementById('settingBrightness');
 
 //format for peers: "name", where name is peer's MAC, "messages", where message is an array of message strings from that peer
+/*example structure:
+peers = [
+  {
+    name: "ab:cd:ef:12:34:56",
+    "messages": [
+      {content: "hello", sent: false},
+      {content: "hi there", sent: true}
+    ],
+  },
+*/
 let peers = [];
 
 // BLE connection state
@@ -124,6 +135,80 @@ function isDisplayableText(s) {
   return printable >= Math.min(s.length, 1);
 }
 
+// handle incoming message from device
+function HandleMessageFromDevice(message) {
+  const targetPeerId = message.slice(0, 17);
+  message = message.slice(17); //remove the target peer ID from the message
+  console.log("Extracted target peer ID:", targetPeerId);
+  console.log("message after slicing:", message);
+  const lines = message.split(/\r?\n/);
+  console.log("Split message into lines:", lines);
+  message = '';
+  lines.forEach(line => {
+    console.log("in line for loop")
+    console.log("Processing line from device:", line);
+    const trimmed = line.trim();
+    console.log("Processing line:", trimmed);
+    if (trimmed && isDisplayableText(trimmed)){
+      let peer = peers.find(p => p.name === targetPeerId);
+      let sentStatus = false;
+      peer.messages.push({content: trimmed, sent: sentStatus});
+      console.log("peer messages", peer.messages);
+      if (peer.name === currentPeerId) {
+        appendMessage(trimmed, sentStatus);
+      }
+    }
+  });
+}
+
+// function for processing peer list from device
+function HandlePeerListFromDevice(peerListStr) {
+  console.log('Received peer list data from device:', peerListStr);
+  const newPeers = JSON.parse(peerListStr);
+  for (const peer of newPeers) {
+    console.log("Processing peer from device:", peer);
+    if (!peers.some(p => p.name === peer)) {
+      console.log("Adding new peer to list:", peer);
+      peers.push({name: peer, messages: []});
+    }
+  }
+  console.log("Updated peers list:", peers);
+  renderPeers(); // update UI
+}
+
+//function for handling incoming BLE notifications
+function CharacteristicValueChanged(event) {
+  console.log("characteristic value changed");
+  const value = event.target.value;
+
+  //early exit
+  if (!value || value.byteLength === 0) return;
+
+  //decode value as UTF-8, ignoring errors (e.g. from binary data or incomplete multi-byte sequences)
+  let decoded;
+  console.log("attempting decode");
+  try {
+    decoded = new TextDecoder('utf-8', { fatal: false }).decode(value);
+  } catch (_) { return; }
+  console.log("decoded value:", decoded);
+  rxBuffer += decoded;
+
+  console.log("updated rxBuffer:", rxBuffer);
+  //first character of rxBuffer is the characteristic value type, 'l' for peer list, 'm' for message
+  if (rxBuffer[0] == 'm'){
+    console.log('Received message data from device:', rxBuffer);
+    rxBuffer = rxBuffer.slice(1); //remove the type character
+    let messageStr = rxBuffer;
+    rxBuffer = '';
+    HandleMessageFromDevice(messageStr);
+  } else if (rxBuffer[0] == 'l'){
+    rxBuffer = rxBuffer.slice(1); //remove the type character
+    let peerListStr = rxBuffer; 
+    rxBuffer = ''; 
+    HandlePeerListFromDevice(peerListStr);
+  }
+}
+
 /** Connect to LocalESP over BLE (or disconnect if already connected) */
 async function connect() {
   // If already connected, disconnect and bail
@@ -159,62 +244,7 @@ async function connect() {
     // 4) Subscribe to TX – we get notified when ESP32 sends data
     rxBuffer = '';
     await txChar.startNotifications();
-    txChar.addEventListener('characteristicvaluechanged', (e) => {
-      console.log("characteristic value changed");
-      const value = e.target.value;
-      if (!value || value.byteLength === 0) return;
-      let decoded;
-      console.log("attempting decode");
-      try {
-        decoded = new TextDecoder('utf-8', { fatal: false }).decode(value);
-      } catch (_) { return; }
-      console.log("decoded value:", decoded);
-      rxBuffer += decoded;
-      console.log("updated rxBuffer:", rxBuffer);
-      //first character of rxBuffer is the characteristic value type, 'l' for peer list, 'm' for message
-      if (rxBuffer[0] == 'm'){
-        console.log('Received message data from device:', rxBuffer);
-        rxBuffer = rxBuffer.slice(1); //remove the type character
-      } else if (rxBuffer[0] == 'l'){
-        rxBuffer = rxBuffer.slice(1); //remove the type character
-        console.log('Received peer list data from device:', rxBuffer);
-        const newPeers = JSON.parse(rxBuffer);
-        for (const peer of newPeers) {
-          console.log("Processing peer from device:", peer);
-          if (!peers.some(p => p.name === peer)) {
-            console.log("Adding new peer to list:", peer);
-            peers.push({name: peer, messages: []});
-          }
-        }
-        console.log("Updated peers list:", peers);
-        renderPeers(); // update UI
-        rxBuffer = ''; // clear buffer after processing peer list
-        return; // exit early since we don't want to treat peer list as messages
-      }
-      const targetPeerId = rxBuffer.slice(0, 17);
-      rxBuffer = rxBuffer.slice(17); //remove the target peer ID from the buffer
-      console.log("Extracted target peer ID:", targetPeerId);
-      console.log("rxBuffer after slicing:", rxBuffer);
-      const lines = rxBuffer.split(/\r?\n/);
-      console.log("Split rxBuffer into lines:", lines);
-      rxBuffer = '';
-      console.log("Remaining rxBuffer after popping last line:", rxBuffer);
-      lines.forEach(line => {
-        console.log("in line for loop")
-        console.log("Processing line from device:", line);
-        const trimmed = line.trim();
-        console.log("Processing line:", trimmed);
-        if (trimmed && isDisplayableText(trimmed)){
-          peer = peers.find(p => p.name === targetPeerId);
-          let sentStatus = false;
-          peer.messages.push({content: trimmed, sent: sentStatus});
-          console.log("peer messages", peer.messages);
-          if (peer.name === currentPeerId) {
-            appendMessage(trimmed, sentStatus);
-          }
-        }
-      });
-    });
+    txChar.addEventListener('characteristicvaluechanged', CharacteristicValueChanged);
 
     // If ESP32 disconnects (e.g. power off), update UI
     device.addEventListener('gattserverdisconnected', () => setConnected(false));
@@ -235,9 +265,9 @@ async function sendMessage(text) {
   sending = true;
   btnSend.disabled = true;
   try {
-    peer = peers.find(p => p.name === currentPeerId);
+    let peer = peers.find(p => p.name === currentPeerId);
     const encoder = new TextEncoder();
-  //encodes with message type 'm' for message, followed by the text and a newline as delimiter
+    //encodes with message type 'm' for message, followed by the text and a newline as delimiter
     const data = encoder.encode('m'+ peer.name + trimmed + '\n' + String.fromCharCode(3)); 
     const chunk = 20;
     for (let i = 0; i < data.length; i += chunk) {
@@ -286,6 +316,8 @@ function InitialSetup() {
   renderPeers();
   setSection('peers');
 }
+
+InitialSetup();
 
 //=========================================================================================================
 // --- Crypto Functions ---
