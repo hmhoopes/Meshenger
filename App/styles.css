@@ -1,0 +1,302 @@
+/* Theme: dark background, accent green, danger red for disconnect */
+:root {
+  --bg: #0d0f12;
+  --surface: #161a20;
+  --border: #2a3038;
+  --text: #e6edf3;
+  --text-muted: #8b949e;
+  --accent: #3fb950;
+  --accent-dim: #238636;
+  --danger: #f85149;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* Full-height column layout */
+body {
+  font-family: 'Outfit', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Top bar: title + connection status */
+header {
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--surface);
+}
+
+h1 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Status text next to the dot */
+.status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+/* Gray dot when disconnected; green + glow when connected */
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.status-dot.connected {
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+
+/* Main content: container for different views (Peers / Messages / Settings) */
+main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  max-width: 640px;
+  margin: 0 auto;
+  width: 100%;
+  padding: 0 1rem;
+}
+
+/* Top-level nav for Peers / Messages / Settings */
+.main-nav {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: #11151b;
+}
+
+.nav-item {
+  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+
+.nav-item.nav-item-active {
+  color: var(--text);
+  border-color: var(--accent);
+  background: rgba(63, 185, 80, 0.15);
+}
+
+/* Section containers – only one is visible at a time */
+.view {
+  display: none;
+}
+
+.view-active {
+  display: block;
+}
+
+.section-title {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-top: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.peers-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.peers-list button {
+  width: 100%;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+}
+
+.peers-list button.active {
+  border-color: var(--accent);
+}
+
+/* Scrollable list of message bubbles */
+#messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 200px;
+}
+
+/* Base bubble style; .sent and .received control side + color */
+.message {
+  max-width: 85%;
+  padding: 0.6rem 0.9rem;
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.message.sent {
+  align-self: flex-end;
+  background: var(--accent-dim);
+  color: var(--text);
+}
+
+.message.received {
+  align-self: flex-start;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.message .time {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+/* Shown when there are no messages yet */
+.empty-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  text-align: center;
+  padding: 2rem;
+}
+
+.empty-state.hidden {
+  display: none;
+}
+
+.empty-state p {
+  margin-top: 0.5rem;
+  font-size: 0.9rem;
+}
+
+/* Message input row; .disabled hides Send when not connected */
+.compose {
+  padding: 1rem 0 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.compose form {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Text input for typing messages; disabled until BLE connected */
+#input {
+  flex: 1;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  padding: 0.65rem 1rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+#input:focus {
+  border-color: var(--accent);
+}
+
+#input::placeholder {
+  color: var(--text-muted);
+}
+
+#input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Shared button base; #btnConnect and #btnSend override colors */
+button {
+  font-family: 'Outfit', sans-serif;
+  font-weight: 500;
+  cursor: pointer;
+  color: var(--text);
+  border: none;
+  border-radius: var(--radius);
+  transition: background 0.15s, opacity 0.15s;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Green = Connect; when .connected, switch to red Disconnect */
+#btnConnect {
+  background: var(--accent);
+  color: var(--bg);
+  padding: 0.65rem 1.25rem;
+  font-size: 0.9rem;
+}
+
+#btnPeerList{
+  background: var(--accent);
+  color: var(--bg);
+  padding: 0.65rem 1.25rem;
+  font-size: 0.9rem;
+}
+
+#btnConnect:hover:not(:disabled) {
+  background: #4dce68;
+}
+
+#btnPeerList:hover:not(:disabled) {
+  background: #4dce68;
+}
+
+#btnConnect.connected {
+  background: var(--danger);
+  padding: 0.65rem 1rem;
+}
+
+#btnConnect.connected:hover:not(:disabled) {
+  background: #da3633;
+}
+
+#btnSend {
+  background: var(--accent);
+  color: var(--bg);
+  padding: 0.65rem 1rem;
+  font-size: 0.9rem;
+}
+
+#btnSend:hover:not(:disabled) {
+  background: #4dce68;
+}
+
+/* Send only visible when compose is enabled (BLE connected) */
+.compose.disabled #btnSend {
+  display: none;
+}
