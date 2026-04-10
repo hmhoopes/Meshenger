@@ -192,9 +192,9 @@ function CharacteristicValueChanged(event) {
   } catch (_) { return; }
   console.log("decoded value:", decoded);
   rxBuffer += decoded;
-
   console.log("updated rxBuffer:", rxBuffer);
-  //first character of rxBuffer is the characteristic value type, 'l' for peer list, 'm' for message
+
+  // process complete rxBuffer
   if (rxBuffer[0] == 'm'){
     console.log('Received message data from device:', rxBuffer);
     rxBuffer = rxBuffer.slice(1); //remove the type character
