@@ -16,6 +16,7 @@ Creation Date: 03/28/2026
 #self explanatory 
 import serial
 from message_store import store_message
+import user_tracking
 
 #defines static serial port and baud rate 
 #flag: serial port may not be assigned by server as static -- likely requires either manually changing this definition or forcing tty definition on server
@@ -72,7 +73,7 @@ def read_serial():
 
 #this naturally assumes that messages are formatted in MAC:mess, parses assuming this, stores
 ''' input formats:
-    - Message: MSG:src_mac|type|id|content
+    - Message: MSG:dst_mac|src_mac|type|id|content
         - content format: 1 char for indicator, 12 chars for sender name, 12 chars for target name, message body
 '''
 def parse_and_store(ser: serial.Serial, line: str):
@@ -90,17 +91,18 @@ def parse_and_store(ser: serial.Serial, line: str):
         print(f"Unrecognized format, discarding: {line}")
 
 def interpret_message(ser: serial.Serial, message: str):
-    parts = message.split('|', 3)
-    if len(parts) != 4:
+    parts = message.split('|', 4)
+    if len(parts) != 5:
         #test clarity line, flag:removal after fixing
         print(f"Invalid message format, discarding: {message}")
         return
-    mac, msg_type, msg_id, content = parts
-    mac = mac.strip()
+    dst_mac, src_mac, msg_type, msg_id, content = parts
+    dst_mac = dst_mac.strip()
+    src_mac = src_mac.strip()
     msg_type = msg_type.strip()
     msg_id = msg_id.strip()
     content = content.strip()
-    print(f"Parsed message - SRC MAC: {mac}, Type: {msg_type}, ID: {msg_id}, Content: {content}")
+    print(f"Parsed message - DST MAC: {dst_mac}, SRC MAC: {src_mac}, Type: {msg_type}, ID: {msg_id}, Content: {content}")
     #split content into indicator, sender name, recipient name, and message body
     if len(content) < 25: # 1 char for indicator + 12 chars for sender name + 12 chars for recipient name
         #test clarity line, flag:removal after fixing
@@ -114,19 +116,46 @@ def interpret_message(ser: serial.Serial, message: str):
     if indicator == 'm':  # message indicator
         print(f"Parsed message - Sender: {sender_name}, Recipient: {recipient_name}, Body: {message_body}")
         store_message(sender_name, message_body)
-
+        send_message(ser, src_mac, 'm', sender_name, message_body)  # forward message to recipient
     elif indicator == 'h':  # heartbeat indicator
         #TODO
         print(f"TODO: add heartbeat handling")
     elif indicator == 's':  # sign in indicator
-        #TODO
-        print(f"TODO: add sign in handling")
+        key_parts = message_body.split('|', 1)
+        if len(key_parts) != 2:
+            print(f"Invalid Sign In message format, discarding: {message}")
+            return
+        length_str, key_str = key_parts
+        length = int(length_str.strip())
+        key_str = key_str[:length].strip()
+        print(f"Parsed Sign In - Sender: {sender_name}, Key: {key_str}")
+
+        print(f"Attempting to sign in user {sender_name} with public key {key_str} and MAC {src_mac} ...")
+        success, msg = user_tracking.sign_in_user(sender_name, key_str, src_mac)
+        print(f"Sign In result for {sender_name}: {'Success' if success else 'Failure'}, Message: {msg}")
+        msg = ('1' if success else '0') + msg
+        send_message(ser, src_mac, 's', sender_name, msg)  # send back sign-in result
     elif indicator == 'r':  # register indicator
-        #TODO
-        print(f"TODO: add register handling")
+        key_parts = message_body.split('|', 1)
+        if len(key_parts) != 2:
+            print(f"Invalid registration message format, discarding: {message}")
+            return
+        length_str, key_str = key_parts
+        length = int(length_str.strip())
+        key_str = key_str[:length].strip()
+        print(f"Parsed registration - Sender: {sender_name}, Key: {key_str}")
+
+        print(f"Attempting to register user {sender_name} with public key {key_str} and MAC {src_mac} ...")
+        success, msg = user_tracking.register_user(sender_name, key_str, src_mac)
+        print(f"Registration result for {sender_name}: {'Success' if success else 'Failure'}, Message: {msg}")
+        msg = ('1' if success else '0') + msg
+        send_message(ser, src_mac, 'r', sender_name, msg)  # send back registration result
     elif indicator == 'l':  # user list request indicator
         #TODO
         print(f"TODO: add user list handling")
+    elif indicator == 'u':  # user entry update indicator
+        #TODO
+        print(f"TODO: add user entry update handling")
     elif indicator == 'g':  # get messages request indicator
         #TODO
         print(f"TODO: add get messages handling")

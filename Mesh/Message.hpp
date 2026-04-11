@@ -60,9 +60,13 @@ typedef struct Message {
       memcpy(dstAddr.data(), dst, 6);
       MAC dstMAC = MAC(dstAddr);
 
+      std::vector<uint8_t> srcAddr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+      memcpy(srcAddr.data(), src, 6);
+      MAC srcMAC = MAC(srcAddr);
+
       char buf[300];
       //format: type|id|info
-      sprintf(buf, "%s|%d|%d|%s\x1E", dstMAC.to_cstr(), type, id, info);
+      sprintf(buf, "%s|%s|%d|%d|%s\x1E", dstMAC.to_cstr(), srcMAC.to_cstr(), type, id, info);
       return std::string(buf).c_str();
     }
 

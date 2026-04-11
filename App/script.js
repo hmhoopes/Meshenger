@@ -28,14 +28,15 @@ const chatPeerLabel = document.getElementById('chatPeerLabel');
 const settingSounds = document.getElementById('settingSounds');
 const settingBrightness = document.getElementById('settingBrightness');
 
-//format for peers: "name", where name is peer's MAC, "messages", where message is an array of message strings from that peer
+//format for peers: "name", where name is peer's MAC, "messages", where message is an table array of message information from that peer
+//message has "content", which is text content, "sender", a boolean indicating if the message was sent by this user or received from the peer
 /*example structure:
 peers = [
   {
-    name: "ab:cd:ef:12:34:56",
+    name: "evan",
     "messages": [
-      {content: "hello", sent: false},
-      {content: "hi there", sent: true}
+      {content: "hello", sender: false},
+      {content: "hi there", sender: true}
     ],
   },
 */
@@ -50,8 +51,28 @@ const MESSAGE_OVERHEAD = 1 + 12 + 12;
 //TODO: update this and corresponding code to allow gcs
 const MAX_MESSAGE_LENGTH = MAX_ESP_PAYLOAD_LENGTH - MESSAGE_OVERHEAD;
 
-let UserName = "Unknown";
 let ConnectedDeviceMac = "Unknown";
+
+//Server Name
+let ServerName = "ServerPi";
+let ServerMAC = "e0:8c:fe:59:7b:84";
+
+//signing in / registering fields
+let UserName = "Unknown";
+let Keys = null;
+let signingIn = false; 
+let registering = false; 
+
+// user list from server, with name, public key, and current mac address (if online)
+// example structure:
+/*userList = [
+  {
+    name: "evan",
+    publicKey: "abc123",
+    mac: "00:11:22:33:44:55" // or null if offline
+  },
+]*/
+let userList = [];
 
 // BLE connection state
 let device = null;
@@ -103,7 +124,7 @@ function selectPeer(peerId) {
   messagesEl.replaceChildren(); // clear messages when switching peers
   console.log(peer.messages);
   peer.messages.forEach(message => {
-    appendMessage(message.content, message.sent);
+    appendMessage(message.content, message.sender);
   });
   setSection('messages');
 }
@@ -135,10 +156,10 @@ function setConnected(connected) {
 }
 
 /** Add a message bubble (sent or received) and scroll to bottom */
-function appendMessage(text, sent) {
+function appendMessage(text, sender) {
   emptyState.classList.add('hidden');
   const div = document.createElement('div');
-  div.className = 'message ' + (sent ? 'sent' : 'received');
+  div.className = 'message ' + (sender ? 'sent' : 'received');
   const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   div.innerHTML = `<span class="content">${escapeHtml(text)}</span><div class="time">${time}</div>`;
   messagesEl.appendChild(div);
@@ -189,23 +210,61 @@ function HandleMessageFromDevice(message) {
   console.log("message after slicing target name:", message);
 
   const lines = message.split(/\r?\n/);
-  console.log("Split message into lines:", lines);
-  message = '';
-  lines.forEach(line => {
-    console.log("in line for loop")
-    console.log("Processing line from device:", line);
-    const trimmed = line.trim();
-    console.log("Processing line:", trimmed);
-    if (trimmed && isDisplayableText(trimmed)){
+  message = lines[0].trim();
+  console.log("Obtained message", message, "ignoring extra lines:", lines.slice(1));
+
+  if (indicator === 'm') {
+    if (message && isDisplayableText(message)){
       let peer = peers.find(p => p.name === targetPeerId);
-      let sentStatus = false;
-      peer.messages.push({content: trimmed, sent: sentStatus});
+      peer.messages.push({content: message, sender: false});
       console.log("peer messages", peer.messages);
       if (peer.name === currentPeerId) {
-        appendMessage(trimmed, sentStatus);
+        appendMessage(message, false);
       }
     }
-  });
+  } else if (indicator === 'h') {
+    // TODO: handle heartbeat (e.g. update peer online status)
+  } else if (indicator === 's') {
+    if (!signingIn) {
+      console.warn('Received unexpected sign-in message, ignoring');
+      return;
+    }
+    signingIn = false;
+    const success = message.slice(0, 1) === '1'; // first char indicates success
+    if (success) {
+      alert('Sign-in successful!');
+      UserName = "Unknown";
+      usernameText.textContent = `Username: ${UserName}`;
+    } else {
+      alert('Sign-in failed: ' + message.slice(1));
+      UserName = "Unknown";
+      Keys = null;
+    }
+  } else if (indicator === 'r') {
+    if (!registering) {
+      console.warn('Received unexpected registering message, ignoring');
+      return;
+    }
+    registering = false;
+    const success = message.slice(0, 1) === '1'; // first char indicates success
+    if (success) {
+      alert('Registration successful!');
+      UserName = "Unknown";
+      usernameText.textContent = `Username: ${UserName}`;
+    } else {
+      alert('Registration failed: ' + message.slice(1));
+      UserName = "Unknown";
+      Keys = null;
+    }
+  } else if (indicator === 'l') {
+    // TODO: handle user list response (e.g. update userList variable and UI)
+    // will use stringToPubKey
+  } else if (indicator == 'u') {
+    // TODO: handle user entry update
+    // will use stringToPubKey
+  } else if (indicator === 'g') {
+    //not sure what to do here, shouldn't be receiving messages with this indicator
+  }
 }
 
 // function for processing peer list from device
@@ -315,29 +374,30 @@ async function connect() {
 
 /** Send text to ESP32 via NUS RX characteristic (chunked for BLE MTU) */
 // indicator is the message indicator ('m' for message, 'h' for heartbeat, 's' for sign in, 'r' for register, 'l' for user list, 'g' for get messages)
-async function sendMessage(indicator, text) {
+async function sendMessage(indicator, text, targetName, targetMac) {
   const trimmed = text.trim();
   if (!rxChar || !trimmed || sending) return;
   sending = true;
   btnSend.disabled = true;
   try {
-    let peer = peers.find(p => p.name === currentPeerId);
+    let peer = peers.find(p => p.name === targetMac);
     const encoder = new TextEncoder();
     for (let i = 0; i < trimmed.length; i += MAX_MESSAGE_LENGTH) {
       const chunkText = trimmed.slice(i, i + MAX_MESSAGE_LENGTH);
       //encodes with message type 'm' for message, followed by the text and end-of-stream as delimiter
       const usernamePadded = UserName.padEnd(12, '\x01').slice(0, 12); // ensure username is exactly 12 chars
-      const targetPeerPadded = "default-targ".padEnd(12, '\x01').slice(0, 12); // ensure target peer ID is exactly 12 chars
+      const targetPeerPadded = targetName.padEnd(12, '\x01').slice(0, 12); // ensure target peer ID is exactly 12 chars
       indicator = indicator.slice(0, 1); // ensure indicator is 1 char
       const data = encoder.encode('m'+ peer.name + indicator + usernamePadded + targetPeerPadded+ chunkText + String.fromCharCode(3)); 
       const chunk = 20;
       for (let i = 0; i < data.length; i += chunk) {
         await rxChar.writeValue(data.slice(i, i + chunk));
       }
-      // TODO: update sent status to reflect message status
-      let sentStatus = true;
-      peer.messages.push({content: chunkText, sent: sentStatus});
-      appendMessage(chunkText, sentStatus);
+
+      if (indicator === 'm') {
+        peer.messages.push({content: chunkText, sender: true});
+        appendMessage(chunkText, true);
+      }
     }
     
   } finally {
@@ -355,7 +415,7 @@ async function requestPeers() {
   console.log('Requested peer list from device...');
 }
 
-async function SetName(username) {
+async function AttemptLogin(username, password, register=false) {
   if (!rxChar) return;
   const encoder = new TextEncoder();
 
@@ -365,10 +425,21 @@ async function SetName(username) {
     username = username.slice(0, 12);
   }
   UserName = username;
-  usernameText.textContent = `Username: ${UserName}`;
+
+  //Set global Keys variable for use in encryption/decryption functions
+  const tempKeys = await deriveKeyPair(password, salt);
+  Keys = toX25519(tempKeys.edPriv, tempKeys.edPub); 
+  let keyStr = pubKeyToString(Keys.xPub); //test conversion functions, remove after testing
+  let messageText = keyStr.length + '|' + keyStr;
 
   //encodes with message type 's' for setting name
-  await rxChar.writeValue(encoder.encode('s' + username));  // command to trigger name setting
+  let indicator = register ? 'r' : 's'; // 'r' for register, 's' for sign in
+  await sendMessage(indicator, messageText, ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);  // command to trigger name setting
+  if (register) {
+    registering = true;
+  } else {
+    signingIn = true;
+  }
   console.log('Requested to set name on device...');
 }
 
@@ -377,17 +448,23 @@ function InitialSetup() {
   btnConnect.addEventListener('click', () => connect());
   btnPeerList.addEventListener('click', () => requestPeers());
   btnSetName.addEventListener('click', () => {
+    const registering = confirm('Click OK to add new account, or cancel to sign in');
     const username = prompt('Enter your device name:');
+    const password = prompt('Enter your password:');
     if (username) {
-      SetName(username);
+      AttemptLogin(username, password, registering);
     }
   });
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    if (Keys == null) {
+      alert('Please sign in or register before sending messages');
+      return;
+    }
     const t = input.value;
     if (!t.trim() || sending) return;
-    sendMessage('m', t);
+    sendMessage('m', t, "default-targ", currentPeerId);
     input.value = '';
   });
 
@@ -412,6 +489,8 @@ InitialSetup();
 
 import { ed25519, x25519 } from "https://esm.sh/@noble/curves@1.4.0/ed25519";
 import { edwardsToMontgomeryPriv, edwardsToMontgomeryPub } from "https://esm.sh/@noble/curves@1.4.0/ed25519";
+
+const salt = "my-app-salt-v1"
 
 /* ── utils ── */
 const toHex   = (b) => Array.from(b).map(x => x.toString(16).padStart(2,"0")).join("");
@@ -464,6 +543,14 @@ async function decrypt(aesKey, { iv, ct }) {
     fromHex(ct)
   );
   return new TextDecoder().decode(plain);
+}
+
+function pubKeyToString(xPub) {
+  return toHex(xPub);  // reuse your existing toHex util
+}
+
+function stringToPubKey(str) {
+  return fromHex(str);  // reuse your existing fromHex util
 }
 
 //----------------------------------------------------------------------------------------------------
