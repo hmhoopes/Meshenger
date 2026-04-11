@@ -530,18 +530,20 @@ bool SendTextMessage(MAC receiver, String msg) {
   bool success = true;
   printf("Sending text message: %s\n", msg.c_str());
 
-  for (int i = 0; msg.length() > (size_t)(i * MessageSize); i++) {
-    strncpy(message.info, msg.c_str() + i * MessageSize, MessageSize);
-    message.id = i;
-#ifdef DEBUG
-    Serial.println("DBG: Sending message");
-#endif
-    success = SendMessageWithRetry(nextHop.value_or(BroadcastPeer), message) && success;
-    if (!success) {
-      Serial.println("ERR: Failed to send text message.");
-    }
+  if (msg.length() > MessageSize) {
+    Serial.println("ERR: Cannot send message longer than MessageSize");
+    return false;
   }
 
+  strncpy(message.info, msg.c_str(), MessageSize);
+#ifdef DEBUG
+  Serial.println("DBG: Sending message");
+#endif
+  success = SendMessageWithRetry(nextHop.value_or(BroadcastPeer), message) && success;
+
+  if (!success) {
+    Serial.println("ERR: Failed to send text message.");
+  }
   return success;
 }
 

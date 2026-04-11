@@ -17,6 +17,8 @@ const btnSetName = document.getElementById('btnSetName');
 const btnSend = document.getElementById('btnSend');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
+const macText = document.getElementById('macText');
+const usernameText = document.getElementById('usernameText');
 const navButtons = document.querySelectorAll('.nav-item');
 const peersListEl = document.getElementById('peersList');
 const peersView = document.getElementById('view-peers');
@@ -49,6 +51,7 @@ const MESSAGE_OVERHEAD = 1 + 17 + 12;
 const MAX_MESSAGE_LENGTH = MAX_ESP_PAYLOAD_LENGTH - MESSAGE_OVERHEAD;
 
 let UserName = "Unknown";
+let ConnectedDeviceMac = "Unknown";
 
 // BLE connection state
 let device = null;
@@ -117,6 +120,13 @@ function setConnected(connected) {
 
   btnPeerList.classList.toggle('connected', connected);
   btnSetName.classList.toggle('connected', connected);
+  
+  if (!connected) {
+    ConnectedDeviceMac = "Unknown";
+    UserName = "Unknown";
+    macText.textContent = `Device MAC: ${ConnectedDeviceMac}`;
+    usernameText.textContent = `Username: ${UserName}`;
+  }
 
   input.disabled = !connected;
   btnSend.disabled = !connected;
@@ -258,6 +268,12 @@ async function connect() {
       optionalServices: [NUS_SERVICE]
     });
 
+    // Store the connected device's MAC address
+    ConnectedDeviceMac = device.name;
+    ConnectedDeviceMac =ConnectedDeviceMac.slice(15); //remove "Meshenger-Pager" prefix to get the MAC
+    macText.textContent = `Device MAC: ${ConnectedDeviceMac}`;
+    
+
     // 2) Connect to GATT server on the ESP32
     const gatt = await device.gatt.connect();
     server = gatt;
@@ -333,6 +349,7 @@ async function SetName(username) {
     username = username.slice(0, 12);
   }
   UserName = username;
+  usernameText.textContent = `Username: ${UserName}`;
 
   //encodes with message type 's' for setting name
   await rxChar.writeValue(encoder.encode('s' + username));  // command to trigger name setting

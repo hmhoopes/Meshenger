@@ -321,3 +321,7 @@ button:disabled {
 .compose.disabled #btnSend {
   display: none;
 }
+
+#usernameText, #macText {
+  margin-right: 10px;
+}
