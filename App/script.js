@@ -13,6 +13,7 @@ const form = document.getElementById('form');
 const input = document.getElementById('input');
 const btnConnect = document.getElementById('btnConnect');
 const btnPeerList = document.getElementById('btnPeerList');
+const btnSetName = document.getElementById('btnSetName');
 const btnSend = document.getElementById('btnSend');
 const statusDot = document.getElementById('statusDot');
 const statusText = document.getElementById('statusText');
@@ -97,11 +98,18 @@ function selectPeer(peerId) {
 /** Update UI and input state when BLE connection changes */
 function setConnected(connected) {
   statusDot.classList.toggle('connected', connected);
+
   statusText.textContent = connected ? 'Connected' : 'Disconnected';
+
   btnConnect.textContent = connected ? 'Disconnect' : 'Connect to device';
   btnConnect.classList.toggle('connected', connected);
+
+  btnPeerList.classList.toggle('connected', connected);
+  btnSetName.classList.toggle('connected', connected);
+
   input.disabled = !connected;
   btnSend.disabled = !connected;
+
   compose.classList.toggle('disabled', !connected);  // shows/hides Send button
 }
 
@@ -291,10 +299,31 @@ async function requestPeers() {
   console.log('Requested peer list from device...');
 }
 
+async function SetName(username) {
+  if (!rxChar) return;
+  const encoder = new TextEncoder();
+
+  // Ensure username is at most 12 characters
+  if (username.length > 12) {
+    console.warn('Username too long, truncating to 12 characters');
+    username = username.slice(0, 12);
+  }
+
+  //encodes with message type 's' for setting name
+  await rxChar.writeValue(encoder.encode('s' + username));  // command to trigger name setting
+  console.log('Requested to set name on device...');
+}
+
 function InitialSetup() {
   // --- Event listeners ---
   btnConnect.addEventListener('click', () => connect());
   btnPeerList.addEventListener('click', () => requestPeers());
+  btnSetName.addEventListener('click', () => {
+    const username = prompt('Enter your device name:');
+    if (username) {
+      SetName(username);
+    }
+  });
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();

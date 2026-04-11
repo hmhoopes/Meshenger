@@ -261,18 +261,7 @@ button:disabled {
   font-size: 0.9rem;
 }
 
-#btnPeerList{
-  background: var(--accent);
-  color: var(--bg);
-  padding: 0.65rem 1.25rem;
-  font-size: 0.9rem;
-}
-
 #btnConnect:hover:not(:disabled) {
-  background: #4dce68;
-}
-
-#btnPeerList:hover:not(:disabled) {
   background: #4dce68;
 }
 
@@ -283,6 +272,38 @@ button:disabled {
 
 #btnConnect.connected:hover:not(:disabled) {
   background: #da3633;
+}
+
+#btnPeerList {
+  background: #e05555;  /* red by default */
+  color: var(--bg);
+  padding: 0.65rem 1.25rem;
+  font-size: 0.9rem;
+  cursor: default;
+}
+
+#btnPeerList.connected {
+  background: var(--accent);  /* green when connected */
+  cursor: pointer;
+}
+#btnPeerList.connected:hover:not(:disabled) {
+  background: #4dce68;  /* your existing green hover */
+}
+
+#btnSetName {
+  background: #e05555;  /* red by default */
+  color: var(--bg);
+  padding: 0.65rem 1.25rem;
+  font-size: 0.9rem;
+  cursor: default;
+}
+
+#btnSetName.connected {
+  background: var(--accent);  /* green when connected */
+  cursor: pointer;
+}
+#btnSetName.connected:hover:not(:disabled) {
+  background: #4dce68;  /* your existing green hover */
 }
 
 #btnSend {

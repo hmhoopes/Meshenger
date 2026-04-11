@@ -69,6 +69,9 @@ void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData,
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 //================================================================================================
 
+// 12 character username for messaging
+String deviceUsername = "default-name";
+
 // isPager:
 // Flag indicating whether this device acts as a BLE pager (forwards mesh messages to BLE client).
 bool isPager = false;
@@ -179,7 +182,12 @@ void AnnouceMAC(){
   message.ttl = 1;
 
   bool success = SendMessage(BroadcastPeer, message);
-  Serial.println((success) ? "Annouced successfully" : "ERR: couldn't send message");
+  if (!success){
+    Serial.println("ERR: Failed to send discovery message");
+  } else {
+    Serial.print("Announced presence to mesh w/ name: ");
+    Serial.println(deviceUsername);
+  }
 }
 
 // FindPeer:

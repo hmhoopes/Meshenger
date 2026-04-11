@@ -187,6 +187,17 @@ class RxCallbacks : public BLECharacteristicCallbacks {
       rx = "";  // No additional data needed
       Peer targetPeer = Peer(MAC(std::vector<uint8_t>{0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF}));
       SendToApp(PeersJSON());
+    } else if (rx[0] == 's') {
+      // command from app to set 12 char name
+      rx_val.remove(0,1);  // Remove the 'm' prefix before sending
+
+      size_t len = rx_val.length();
+      if (len > 12) {
+        len = 12; // Truncate to 12 chars if longer
+      }
+      deviceUsername = rx_val.substring(0, len);
+      Serial.print("Setting device username to: ");
+      Serial.println(deviceUsername);
     } else {
         Serial.println("ERR: Received unknown command from BLE client");
     }
