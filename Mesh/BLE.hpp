@@ -249,7 +249,6 @@ void InitializeBLE(String aName){
 // Return true if a BLE client is currently connected to the pager.
 bool IsConnected() {return deviceConnected; }
 
-//TODO: workout why it prints weird sometimes
 //Note: message won't be sent if not connected
 // SendToApp:
 // Send raw byte data to the connected BLE client via notifications,

@@ -25,6 +25,11 @@ Creation Date: 02/17/2026
 
 #include <optional>
 
+//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// if changing the Message struct, ensure to update MAX_MESSAGE_LENGTH in App/script.js accordingly 
+// to avoid sending messages that exceed ESP-NOW limits
+//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 // MessageType:
 // Enumerates the different kinds of messages that can be sent/received in the mesh.
 typedef enum MessageType {
@@ -39,12 +44,6 @@ typedef enum MessageType {
   Invalid,
 } MessageType;
 
-struct MessageHeader {
-  MessageType type = MessageType::Invalid;
-  int id = 0;
-  unsigned char source[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-  unsigned char target[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-};
 // MessageSize:
 // Size of the payload buffer for a Message, computed from ESP-NOW max payload less header fields.
 // Accounts for routing fields: src (6), dst (6), ttl (1).
@@ -54,6 +53,7 @@ static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - (sizeof(int) + sizeof(
 // Container for a mesh message including type, id, routing header, and a fixed-size payload buffer.
 // src/dst carry the original source and final destination MACs for multi-hop routing.
 // ttl limits the number of hops a message may traverse.
+#pragma pack(push, 1) // Ensure no padding for consistent size
 typedef struct Message {
     std::string to_string() const {
       char buf[300];

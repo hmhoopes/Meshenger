@@ -20,14 +20,6 @@ Creation Date: 02/28/2026
 
 #include <memory>
 
-/*
-TODO:
-  - workout how to send to mesh asynchronously (do in later sprint)
-  - add node propagation (do in later sprint)
-    - add queue of message hashes?
-    - use unique id to differentiate repeated messages 
-    - drop if seen before, otherwise broadcast
-*/
 
 // setup:
 // Configure this device as a pager, initialize ESP-NOW and BLE.
@@ -51,5 +43,11 @@ void loop() {
   }
 #endif
   AnnouceMAC();
+
+/* Used to determine message length for App/script.js
+  Serial.print("message size: ");
+  Serial.println(sizeof(Message));
+  Serial.print("mesage max length: ");
+  Serial.println(MessageSize); */
   delay(10000);
 }

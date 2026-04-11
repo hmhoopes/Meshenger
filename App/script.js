@@ -39,6 +39,17 @@ peers = [
 */
 let peers = [];
 
+// MAX message length, used in sending message to ensure sending in esp-now 1 message sized chunks
+const MAX_ESP_PAYLOAD_LENGTH = 229
+
+// message sending fields:
+// 1 byte for message type + 17 bytes for target MAC + 12 bytes for name
+const MESSAGE_OVERHEAD = 1 + 17 + 12;
+//TODO: update this and corresponding code to allow gcs
+const MAX_MESSAGE_LENGTH = MAX_ESP_PAYLOAD_LENGTH - MESSAGE_OVERHEAD;
+
+let UserName = "Unknown";
+
 // BLE connection state
 let device = null;
 let server = null;
@@ -149,6 +160,13 @@ function HandleMessageFromDevice(message) {
   message = message.slice(17); //remove the target peer ID from the message
   console.log("Extracted target peer ID:", targetPeerId);
   console.log("message after slicing:", message);
+
+  let targetPeerName = message.slice(0, 12);
+  targetPeerName = targetPeerName.replace(/\x01/g, '').trim(); //remove padding and trim
+  message = message.slice(12); //remove the sender name from the message
+  console.log("Extracted sender name:", targetPeerName);
+  console.log("message after slicing sender name:", message);
+
   const lines = message.split(/\r?\n/);
   console.log("Split message into lines:", lines);
   message = '';
@@ -275,15 +293,21 @@ async function sendMessage(text) {
   try {
     let peer = peers.find(p => p.name === currentPeerId);
     const encoder = new TextEncoder();
-    //encodes with message type 'm' for message, followed by the text and a newline as delimiter
-    const data = encoder.encode('m'+ peer.name + trimmed + '\n' + String.fromCharCode(3)); 
-    const chunk = 20;
-    for (let i = 0; i < data.length; i += chunk) {
-      await rxChar.writeValue(data.slice(i, i + chunk));
+    for (let i = 0; i < trimmed.length; i += MAX_MESSAGE_LENGTH) {
+      const chunkText = trimmed.slice(i, i + MAX_MESSAGE_LENGTH);
+      //encodes with message type 'm' for message, followed by the text and end-of-stream as delimiter
+      const usernamePadded = UserName.padEnd(12, '\x01').slice(0, 12); // ensure username is exactly 12 chars
+      const data = encoder.encode('m'+ peer.name + usernamePadded + chunkText + String.fromCharCode(3)); 
+      const chunk = 20;
+      for (let i = 0; i < data.length; i += chunk) {
+        await rxChar.writeValue(data.slice(i, i + chunk));
+      }
+      // TODO: update sent status to reflect message status
+      let sentStatus = true;
+      peer.messages.push({content: chunkText, sent: sentStatus});
+      appendMessage(chunkText, sentStatus);
     }
-    let sentStatus = true;
-    peer.messages.push({content: trimmed, sent: sentStatus});
-    appendMessage(trimmed, sentStatus);
+    
   } finally {
     sending = false;
     btnSend.disabled = !device || !server || !server.connected;
@@ -308,6 +332,7 @@ async function SetName(username) {
     console.warn('Username too long, truncating to 12 characters');
     username = username.slice(0, 12);
   }
+  UserName = username;
 
   //encodes with message type 's' for setting name
   await rxChar.writeValue(encoder.encode('s' + username));  // command to trigger name setting

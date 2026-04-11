@@ -44,18 +44,6 @@ Key functionalities:
 - Integration with pager mode for BLE bridging.
 
 ### Connection & Message
-#### **TODO:**
-1. Add connection tracking 
-    - update messaging
-    - add connection class
-    - add functions for establishing connection, sending to target
-    - update message handling to receiving message from connection
-2. Update message handling to drop / repeat
-    - track vector of last $10$ messages' hashes (of sender, id, split id)
-    - repeat to friends if not target and not in vector
-    - handle if target
-        - ack if below seen num, otherwise decrypt and send to app
-    - drop else
 
 #### Connection tracking
 - Each pager tracks vector of connections
