@@ -42,11 +42,11 @@ peers = [
 let peers = [];
 
 // MAX message length, used in sending message to ensure sending in esp-now 1 message sized chunks
-const MAX_ESP_PAYLOAD_LENGTH = 229
+const MAX_ESP_PAYLOAD_LENGTH = 229;
 
 // message sending fields:
-// 1 byte for message type + 17 bytes for target MAC + 12 bytes for name
-const MESSAGE_OVERHEAD = 1 + 17 + 12;
+// 1 byte for message indicator + 12 bytes for sender name + 12 bytes for target name
+const MESSAGE_OVERHEAD = 1 + 12 + 12;
 //TODO: update this and corresponding code to allow gcs
 const MAX_MESSAGE_LENGTH = MAX_ESP_PAYLOAD_LENGTH - MESSAGE_OVERHEAD;
 
@@ -171,11 +171,22 @@ function HandleMessageFromDevice(message) {
   console.log("Extracted target peer ID:", targetPeerId);
   console.log("message after slicing:", message);
 
+  const indicator = message.slice(0, 1);
+  message = message.slice(1); // remove the indicator
+  console.log("Extracted message indicator:", indicator);
+  console.log("message after slicing indicator:", message);
+
+  let senderPeerName = message.slice(0, 12);
+  senderPeerName = senderPeerName.replace(/\x01/g, '').trim(); //remove padding and trim
+  message = message.slice(12); //remove the sender name from the message
+  console.log("Extracted sender name:", senderPeerName);
+  console.log("message after slicing sender name:", message);
+
   let targetPeerName = message.slice(0, 12);
   targetPeerName = targetPeerName.replace(/\x01/g, '').trim(); //remove padding and trim
   message = message.slice(12); //remove the sender name from the message
-  console.log("Extracted sender name:", targetPeerName);
-  console.log("message after slicing sender name:", message);
+  console.log("Extracted target name:", targetPeerName);
+  console.log("message after slicing target name:", message);
 
   const lines = message.split(/\r?\n/);
   console.log("Split message into lines:", lines);
@@ -296,12 +307,15 @@ async function connect() {
     if (err.name !== 'NotFoundError') {
       console.error(err);
       alert('Connection failed: ' + (err.message || err));
+      ConnectedDeviceMac = "Unknown";
+      macText.textContent = `Device MAC: ${ConnectedDeviceMac}`;
     }
   }
 }
 
 /** Send text to ESP32 via NUS RX characteristic (chunked for BLE MTU) */
-async function sendMessage(text) {
+// indicator is the message indicator ('m' for message, 'h' for heartbeat, 's' for sign in, 'r' for register, 'l' for user list, 'g' for get messages)
+async function sendMessage(indicator, text) {
   const trimmed = text.trim();
   if (!rxChar || !trimmed || sending) return;
   sending = true;
@@ -313,7 +327,9 @@ async function sendMessage(text) {
       const chunkText = trimmed.slice(i, i + MAX_MESSAGE_LENGTH);
       //encodes with message type 'm' for message, followed by the text and end-of-stream as delimiter
       const usernamePadded = UserName.padEnd(12, '\x01').slice(0, 12); // ensure username is exactly 12 chars
-      const data = encoder.encode('m'+ peer.name + usernamePadded + chunkText + String.fromCharCode(3)); 
+      const targetPeerPadded = "default-targ".padEnd(12, '\x01').slice(0, 12); // ensure target peer ID is exactly 12 chars
+      indicator = indicator.slice(0, 1); // ensure indicator is 1 char
+      const data = encoder.encode('m'+ peer.name + indicator + usernamePadded + targetPeerPadded+ chunkText + String.fromCharCode(3)); 
       const chunk = 20;
       for (let i = 0; i < data.length; i += chunk) {
         await rxChar.writeValue(data.slice(i, i + chunk));
@@ -371,7 +387,7 @@ function InitialSetup() {
     e.preventDefault();
     const t = input.value;
     if (!t.trim() || sending) return;
-    sendMessage(t);
+    sendMessage('m', t);
     input.value = '';
   });
 

@@ -55,6 +55,17 @@ static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - (sizeof(int) + sizeof(
 // ttl limits the number of hops a message may traverse.
 #pragma pack(push, 1) // Ensure no padding for consistent size
 typedef struct Message {
+    const char* to_server_serial() const {
+      std::vector<uint8_t> dstAddr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+      memcpy(dstAddr.data(), dst, 6);
+      MAC dstMAC = MAC(dstAddr);
+
+      char buf[300];
+      //format: type|id|info
+      sprintf(buf, "%s|%d|%d|%s\x1E", dstMAC.to_cstr(), type, id, info);
+      return std::string(buf).c_str();
+    }
+
     std::string to_string() const {
       char buf[300];
       sprintf(buf, "Type: %d | ID: %d | TTL: %d | Message: %s\n", type, id, ttl, info);

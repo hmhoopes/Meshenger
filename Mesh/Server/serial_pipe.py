@@ -22,47 +22,117 @@ from message_store import store_message
 SERIAL_PORT = '/dev/ttyUSB0'
 BAUD_RATE = 115200
 
-#this naturally assumes that messages are formatted in MAC:mess, parses assuming this, stores
-def parse_and_store(line: str):
-    if ':' in line:
-        mac, message = line.split(':', 1)
-        store_message(mac.strip(), message.strip())
-        #test clarity line, flag:removal after fixing
-        print(f"Stored from {mac.strip()}: {message.strip()}")
-    else:
-        #test clarity line, flag: removal after fixing 
-        print(f"Unrecognized format, discarding: {line}")
+MAX_ESP_PAYLOAD_LENGTH = 229
+# 1 byte for message indicator + 12 bytes for sender name + 12 bytes for target name
+MESSAGE_OVERHEAD = 1 + 12 + 12
+MAX_MESSAGE_LENGTH = MAX_ESP_PAYLOAD_LENGTH - MESSAGE_OVERHEAD
+
+server_name = "ServerPi"
 
 #sends back a message over serial 
-def send_message(ser: serial.Serial, mac_addr: str, message: str):
-    line = f"{mac_addr}:{message}\n"
+#format is MSG:target-mac|content, where content's format is 1 char for indicator, 12 chars for sender name, 12 chars for recipient name, message body
+def send_message(ser: serial.Serial, mac_addr: str, indicator: str, target_name: str, message: str):
+    if len(message) > MAX_MESSAGE_LENGTH:
+        print(f"Message too long to send, truncating to {MAX_MESSAGE_LENGTH} chars")
+        message = message[:MAX_MESSAGE_LENGTH]
+    if len(indicator) != 1:
+        print("Indicator must be exactly 1 char, truncating")
+        indicator = indicator[:1]
+    if len(target_name) > 12:
+        print("Target name too long, truncating to 12 chars")
+        target_name = target_name[:12]
+    target_name_padded = target_name.ljust(12, '\x01')[:12] # pad with \x01 and truncate to 12 chars
+    server_name_padded = server_name.ljust(12, '\x01')[:12] # pad with \x01 and truncate to 12 chars
+
+    line = f"MSG:{mac_addr}{indicator+server_name_padded+target_name_padded+message}\x1E" # \x1E is the end-of-stream delimiter
     ser.write(line.encode('utf-8'))
-    print(f"Sent to {mac_addr}: {message}")
+    print(f"Sent the following line: |{line}|")
+
+#reads till we hit stop symbol '\x1E'
+def read_till_stop(serial: serial.Serial):
+    buffer = b''
+    while True:
+        byte = serial.read(1)
+        if byte == b'\x1E':
+            break
+        buffer += byte
+    serial.reset_input_buffer()
+    return buffer.decode('utf-8', errors='ignore').strip()
     
 #reads from serial 
 def read_serial():
     with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
         print(f"Listening on {SERIAL_PORT}...")
         while True:
-            line = ser.readline().decode('utf-8', errors='ignore').strip()
+            line = read_till_stop(ser)
             if line:
                 #test clarity line, flag:removal after fixing
                 print(f"Raw received: {line}")
-                parse_and_store(line)
-
-def send_message(ser: serial.Serial, mac_addr: str, message: str):
-    line = f"{mac_addr}:{message}\n"
-    ser.write(line.encode('utf-8'))
-    print(f"Sent to {mac_addr}: {message}")
-
+                parse_and_store(ser, line)
 
 #this naturally assumes that messages are formatted in MAC:mess, parses assuming this, stores
-def parse_and_store(line: str):
+''' input formats:
+    - Message: MSG:src_mac|type|id|content
+        - content format: 1 char for indicator, 12 chars for sender name, 12 chars for target name, message body
+'''
+def parse_and_store(ser: serial.Serial, line: str):
     if ':' in line:
-        mac, message = line.split(':', 1)
-        store_message(mac.strip(), message.strip())
-        #test clarity line, flag:removal after fixing
-        print(f"Stored from {mac.strip()}: {message.strip()}")
+        type, message = line.split(':', 1)
+        type = type.strip()
+        message = message.strip()
+        if type == "MSG":
+            interpret_message(ser,message)
+        else:
+            #test clarity line, flag:removal after fixing
+            print(f"Unrecognized type '{type}', discarding: {line}")
     else:
         #test clarity line, flag: removal after fixing 
         print(f"Unrecognized format, discarding: {line}")
+
+def interpret_message(ser: serial.Serial, message: str):
+    parts = message.split('|', 3)
+    if len(parts) != 4:
+        #test clarity line, flag:removal after fixing
+        print(f"Invalid message format, discarding: {message}")
+        return
+    mac, msg_type, msg_id, content = parts
+    mac = mac.strip()
+    msg_type = msg_type.strip()
+    msg_id = msg_id.strip()
+    content = content.strip()
+    print(f"Parsed message - SRC MAC: {mac}, Type: {msg_type}, ID: {msg_id}, Content: {content}")
+    #split content into indicator, sender name, recipient name, and message body
+    if len(content) < 25: # 1 char for indicator + 12 chars for sender name + 12 chars for recipient name
+        #test clarity line, flag:removal after fixing
+        print(f"Content too short, discarding: {message}")
+        return
+    indicator = content[0]
+    sender_name = content[1:13].replace('\x01', '').strip() # remove padding and trim
+    recipient_name = content[13:25].replace('\x01', '').strip() # remove padding and trim
+    message_body = content[25:].replace('\x01', '').strip()
+
+    if indicator == 'm':  # message indicator
+        print(f"Parsed message - Sender: {sender_name}, Recipient: {recipient_name}, Body: {message_body}")
+        store_message(sender_name, message_body)
+
+    elif indicator == 'h':  # heartbeat indicator
+        #TODO
+        print(f"TODO: add heartbeat handling")
+    elif indicator == 's':  # sign in indicator
+        #TODO
+        print(f"TODO: add sign in handling")
+    elif indicator == 'r':  # register indicator
+        #TODO
+        print(f"TODO: add register handling")
+    elif indicator == 'l':  # user list request indicator
+        #TODO
+        print(f"TODO: add user list handling")
+    elif indicator == 'g':  # get messages request indicator
+        #TODO
+        print(f"TODO: add get messages handling")
+    else:
+        #test clarity line, flag:removal after fixing
+        print(f"Unrecognized message type '{indicator}', discarding: {message}")
+        return
+
+read_serial()

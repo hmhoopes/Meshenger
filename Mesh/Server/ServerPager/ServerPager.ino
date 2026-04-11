@@ -14,8 +14,11 @@ Creation Date: 04/11/2026
 
 // Custom library headers
 #include "../../Helpers.hpp"
+#include "../../Message.hpp"
+#include "../../ServerSerial.hpp"
 
 #include <memory>
+#include <utility>
 
 // setup:
 // Configure this device as a pager, initialize ESP-NOW and BLE.
@@ -31,5 +34,9 @@ void loop() {
 #ifdef SERIAL_LOG_DEBUG
   Serial.println("----------------testmessage----------------");
 #endif
+  auto [readyMessage, targetMac] = ReadFromSerial();
+  if (targetMac != BroadcastMAC) {
+    SendTextMessage(targetMac, readyMessage);
+  }
   delay(10000);
 }
