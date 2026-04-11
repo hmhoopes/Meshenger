@@ -16,6 +16,7 @@ Creation Date: 03/29/2026
 
 from collections import defaultdict
 import message_store, time 
+import json
 
 #two minutes from now 
 timeout = time.time() + 60*2
@@ -62,3 +63,9 @@ def sign_in_user(name: str, pub_key: str, mac_addr: str):
     user_tracking[name] = (pub_key, True, mac_addr)
     print(f"User {name} signed in successfully with MAC {mac_addr}")
     return (True, f"User {name} signed in successfully")
+
+def get_user_json(name: str) -> str:
+    if name not in user_tracking:
+        return None
+    pubkey, active, mac = user_tracking[name]
+    return json.dumps({"name": name, "pubkey": pubkey, "active": active, "mac": mac})

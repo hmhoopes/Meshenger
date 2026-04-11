@@ -14,6 +14,7 @@ Creation Date: 03/28/2026
 """
 
 #self explanatory 
+import json
 import serial
 from message_store import store_message
 import user_tracking
@@ -151,11 +152,13 @@ def interpret_message(ser: serial.Serial, message: str):
         msg = ('1' if success else '0') + msg
         send_message(ser, src_mac, 'r', sender_name, msg)  # send back registration result
     elif indicator == 'l':  # user list request indicator
-        #TODO
-        print(f"TODO: add user list handling")
-    elif indicator == 'u':  # user entry update indicator
-        #TODO
-        print(f"TODO: add user entry update handling")
+        print(f"Received user list request from {sender_name}, sending user list...")
+        for user in user_tracking.user_tracking:
+            print(f"\tUser: {user}, Info: {user_tracking.user_tracking[user]}")
+            user_entry_str = user_tracking.get_user_json(user)
+            print(f"\tUser entry string: {user_entry_str}, length: {len(user_entry_str)}")
+            send_message(ser, src_mac, 'l', sender_name, user_entry_str)
+
     elif indicator == 'g':  # get messages request indicator
         #TODO
         print(f"TODO: add get messages handling")

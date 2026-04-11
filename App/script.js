@@ -259,9 +259,6 @@ function HandleMessageFromDevice(message) {
   } else if (indicator === 'l') {
     // TODO: handle user list response (e.g. update userList variable and UI)
     // will use stringToPubKey
-  } else if (indicator == 'u') {
-    // TODO: handle user entry update
-    // will use stringToPubKey
   } else if (indicator === 'g') {
     //not sure what to do here, shouldn't be receiving messages with this indicator
   }
@@ -380,7 +377,6 @@ async function sendMessage(indicator, text, targetName, targetMac) {
   sending = true;
   btnSend.disabled = true;
   try {
-    let peer = peers.find(p => p.name === targetMac);
     const encoder = new TextEncoder();
     for (let i = 0; i < trimmed.length; i += MAX_MESSAGE_LENGTH) {
       const chunkText = trimmed.slice(i, i + MAX_MESSAGE_LENGTH);
@@ -388,13 +384,14 @@ async function sendMessage(indicator, text, targetName, targetMac) {
       const usernamePadded = UserName.padEnd(12, '\x01').slice(0, 12); // ensure username is exactly 12 chars
       const targetPeerPadded = targetName.padEnd(12, '\x01').slice(0, 12); // ensure target peer ID is exactly 12 chars
       indicator = indicator.slice(0, 1); // ensure indicator is 1 char
-      const data = encoder.encode('m'+ peer.name + indicator + usernamePadded + targetPeerPadded+ chunkText + String.fromCharCode(3)); 
+      const data = encoder.encode('m'+ targetMac + indicator + usernamePadded + targetPeerPadded+ chunkText + String.fromCharCode(3)); 
       const chunk = 20;
       for (let i = 0; i < data.length; i += chunk) {
         await rxChar.writeValue(data.slice(i, i + chunk));
       }
-
-      if (indicator === 'm') {
+      
+      let peer = peers.find(p => p.name === targetMac);
+      if (indicator === 'm' && peer) {
         peer.messages.push({content: chunkText, sender: true});
         appendMessage(chunkText, true);
       }
@@ -409,10 +406,11 @@ async function sendMessage(indicator, text, targetName, targetMac) {
 /** Ask ESP32 for the current list of connected peers */
 async function requestPeers() {
   if (!rxChar) return;
-  const encoder = new TextEncoder();
-  //encodes with message type 'l' for peer list request
-  await rxChar.writeValue(encoder.encode('l'));  // command to trigger peer list response
-  console.log('Requested peer list from device...');
+
+  console.log('Requesting peer list from device...');
+  let indicator = 'l';
+  await sendMessage(indicator, "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);  // command to trigger name setting
+  console.log('Requested peer list from device, waiting for response...');
 }
 
 async function AttemptLogin(username, password, register=false) {
