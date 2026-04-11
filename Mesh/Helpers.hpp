@@ -37,6 +37,9 @@ Creation Date: 02/11/2026
 #include "MAC.hpp"
 #include "Peer.hpp"
 
+// 12 character username for messaging
+extern String deviceUsername;
+
 extern MAC BroadcastMAC;
 extern Peer BroadcastPeer;
 
@@ -63,13 +66,13 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
 bool SendTextMessage(MAC receiver, String msg);
 
 #include "BLE.hpp"
+#include "ServerSerial.hpp"
 
 //================================== Forward Decls ===============================================
 void OnSenderReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len);
 //================================================================================================
 
-// 12 character username for messaging
 String deviceUsername = "default-name";
 
 // isPager:
@@ -108,9 +111,11 @@ std::vector<std::pair<MAC, MAC>> RoutingTable;
 
 //Function to get a JSON-formatted list of peer MAC addresses for sending to BLE client
 std::span<const std::byte> PeersJSON() {
+#ifdef SERIAL_LOG_DEBUG
   Serial.println("Generating peers JSON...");
   Serial.print("Peers Size: ");
   Serial.println(Peers.size());
+#endif
   //include the 'l' command prefix to indicate this is a peer list response
   std::string json = "l[";
   for (size_t i = 0; i < Peers.size(); i++) {
@@ -120,8 +125,10 @@ std::span<const std::byte> PeersJSON() {
     }
   }
   json += "]";
+#ifdef SERIAL_LOG_DEBUG
   Serial.print("Generated JSON: ");
   Serial.println(json.c_str());
+#endif
   return std::as_bytes(std::span<char>(reinterpret_cast<char *>(json.data()), json.size()));
 }
 
@@ -151,17 +158,23 @@ void InitializeESPNow(){
 
   // Capture our own MAC for routing header population
   SelfMAC = GetMACAddress();
+#ifdef SERIAL_LOG_DEBUG
   Serial.print("Node MAC: ");
   Serial.println(SelfMAC.to_cstr());
+#endif
 
   // Init ESP-NOW
   if (esp_now_init() != ESP_OK) {
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("ERR: Could not initalize ESP-NOW");
+#endif
     assert(false);
   }
 
   if (!BroadcastPeer.AddPeer()){
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("ERR: Failed to add broadcast as peer");
+#endif
     assert(false);
   }
 
@@ -183,10 +196,14 @@ void AnnouceMAC(){
 
   bool success = SendMessage(BroadcastPeer, message);
   if (!success){
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("ERR: Failed to send discovery message");
+#endif
   } else {
+#ifdef SERIAL_LOG_DEBUG
     Serial.print("Announced presence to mesh w/ name: ");
     Serial.println(deviceUsername);
+#endif
   }
 }
 
@@ -208,7 +225,7 @@ std::optional<Peer> FindPeer(MAC source) {
 // Handle incoming Discovery messages: add sender to local peer list and reply when appropriate.
 void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
   MAC source = GetSenderMAC(info);
-#ifdef DEBUG
+#ifdef SERIAL_LOG_DEBUG
   Serial.print("DBG: Recieved Discovery Message from: ");
   Serial.println(source.to_cstr());
 #endif
@@ -217,7 +234,9 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
   Peer source_peer = Peer(source);
 
   if (!source_peer.AddPeer()){
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("ERR: Failed to add discovery sender as peer");
+#endif
     return;
   }
 
@@ -241,7 +260,9 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
     memcpy(reply.dst, source.GetAddressArray(), 6);
     reply.ttl = 1;
     bool success = SendMessage(source_peer, reply);
+#ifdef SERIAL_LOG_DEBUG
     Serial.println((success) ? "Replied successfully" : "ERR: couldn't send message");
+#endif
   }
 }
 
@@ -249,7 +270,7 @@ void HandleDiscovery(const esp_now_recv_info* info, const Message message) {
 // Handle incoming DiscoveryResponse messages: add sender to local peer list if absent.
 void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message message) {
   MAC source = GetSenderMAC(info);
-#ifdef DEBUG
+#ifdef SERIAL_LOG_DEBUG
   Serial.print("DBG: Recieved DiscoveryResponse Message from: ");
   Serial.println(source.to_cstr());
 #endif
@@ -258,7 +279,9 @@ void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message 
   Peer source_peer = Peer(source);
 
   if (!source_peer.AddPeer()){
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("ERR: Failed to add ACK sender as peer");
+#endif
     return;
   }
 
@@ -278,7 +301,7 @@ void HandleSenderDiscoveryResponse(const esp_now_recv_info* info, const Message 
 // Handle incoming ACK messages: clear waitingForAck when ACK matches expected ackId.
 void HandleACK(const esp_now_recv_info* info, const Message message) {
   MAC source = GetSenderMAC(info);
-#ifdef DEBUG
+#ifdef SERIAL_LOG_DEBUG
   Serial.print("DBG: Recieved ACK Message from: ");
   Serial.println(source.to_cstr());
 #endif
@@ -288,7 +311,9 @@ void HandleACK(const esp_now_recv_info* info, const Message message) {
   if (message.id == ackId) {
     waitingForAck = false;
   } else {
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("ERR: ACK id did not match message");
+#endif
   }
 }
 
@@ -313,47 +338,55 @@ void HandleText(const esp_now_recv_info* info, const Message message) {
     ack.ttl = 1;
     SendMessage(*sender_peer, ack);
   } else {
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("ERR: Sender peer not in peer list.");
+#endif
   }
 
   // Forward if we are not the final destination.
   if (dst != SelfMAC && dst != BroadcastMAC) {
     if (message.ttl == 0) {
+#ifdef SERIAL_LOG_DEBUG
       Serial.println("ERR: TTL expired, dropping message");
+#endif
       return;
     }
     auto nextHop = FindNextHop(dst);
     if (!nextHop.has_value()) {
+#ifdef SERIAL_LOG_DEBUG
       Serial.print("ERR: No route to ");
       Serial.println(dst.to_cstr());
+#endif
       return;
     }
     Message fwd = message;
     fwd.ttl--;
     SendMessage(*nextHop, fwd);
-#ifdef DEBUG
+#ifdef SERIAL_LOG_DEBUG
     Serial.print("DBG: Forwarded to ");
     Serial.println(nextHop->GetMAC().to_cstr());
 #endif
     return;
   }
 
-  // Deliver locally.
   if (isPager){
+    // if we are a user pager, forward the message to the app over BLE instead of printing to serial
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("receiving message...");
+#endif
     size_t len = strnlen(message.info, MessageSize);
     std::string text(message.info, len);
     std::string sourceStr = src.to_string();
     std::string ret = 'm' + sourceStr + text;
 
+#ifdef SERIAL_LOG_DEBUG
     Serial.print("Forwarding to app: ");
     Serial.println(ret.c_str());
+#endif
     SendToApp(std::as_bytes(std::span<char>(reinterpret_cast<char *>(ret.data()), ret.size())));
   } else {
-    Serial.print("MSG from ");
-    Serial.print(src.to_cstr());
-    Serial.print(": ");
-    Serial.println(message.info);
+    // if we are a server pager, send the message to server over serial instead of BLE
+    SendToSerial(message);
   }
 }
 
@@ -361,7 +394,13 @@ void HandleText(const esp_now_recv_info* info, const Message message) {
 // Entry point for received ESP-NOW payloads: validate size, deserialize Message and dispatch to handlers.
 void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, int len) {
   if (len != sizeof(Message)){
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("ERR: received message of different size than expected");
+    Serial.print("Expected: ");
+    Serial.print(sizeof(Message));
+    Serial.print(" | Received: ");
+    Serial.println(len);
+#endif
     return;
   }
 
@@ -379,8 +418,10 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
       HandleDiscovery(info, message);
       break;
     case MessageType::Text:
+#ifdef SERIAL_LOG_DEBUG
       Serial.print("Message Recieved: ");
       Serial.println(message.to_cstr());
+#endif
       HandleText(info, message);
       break;
     case MessageType::PeerList:
@@ -388,8 +429,10 @@ void OnDataReceive(const esp_now_recv_info* info, const uint8_t *incomingData, i
       break;
     case MessageType::Invalid:
     default:
+#ifdef SERIAL_LOG_DEBUG
       Serial.print("Invalid Message Recieved: ");
       Serial.println(message.to_cstr());
+#endif
       break;
   }
 }
@@ -413,8 +456,10 @@ void PruneStale() {
   while (it != Peers.end()) {
     if (it->IsStale(PEER_TIMEOUT_MS)) {
       MAC staleMac = it->GetMAC();
+#ifdef SERIAL_LOG_DEBUG
       Serial.print("Removing stale peer: ");
       Serial.println(staleMac.to_cstr());
+#endif
 
       esp_now_del_peer(staleMac.GetAddressArray());
 
@@ -468,7 +513,9 @@ void SendPeerList(Peer target) {
   }
 
   bool success = SendMessage(target, msg);
+#ifdef SERIAL_LOG_DEBUG
   Serial.println(success ? "Peer list sent" : "ERR: Failed to send peer list");
+#endif
 }
 
 // HandlePeerList:
@@ -477,7 +524,7 @@ void SendPeerList(Peer target) {
 // the next hop, enabling multi-hop delivery through that neighbor.
 void HandlePeerList(const esp_now_recv_info* info, const Message message) {
   MAC sender = GetSenderMAC(info);
-#ifdef DEBUG
+#ifdef SERIAL_LOG_DEBUG
   Serial.print("DBG: Received PeerList from: ");
   Serial.println(sender.to_cstr());
 #endif
@@ -501,10 +548,12 @@ void HandlePeerList(const esp_now_recv_info* info, const Message message) {
 
     if (!routeExists) {
       RoutingTable.emplace_back(peerMAC, sender);
+#ifdef SERIAL_LOG_DEBUG
       Serial.print("Route: ");
       Serial.print(peerMAC.to_cstr());
       Serial.print(" via ");
       Serial.println(sender.to_cstr());
+#endif
     }
   }
 }
@@ -517,9 +566,11 @@ bool SendTextMessage(MAC receiver, String msg) {
   auto nextHop = FindNextHop(receiver);
 
   if (!nextHop.has_value()) {
+#ifdef SERIAL_LOG_DEBUG
     Serial.print("No route to ");
     Serial.println(receiver.to_cstr());
     Serial.println("Broadcasting...");
+#endif
   }
 
   Message message = {};
@@ -528,21 +579,27 @@ bool SendTextMessage(MAC receiver, String msg) {
   memcpy(message.dst, receiver.GetAddressArray(), 6);
   message.ttl = 5; // Allow up to 5 hops
   bool success = true;
+#ifdef SERIAL_LOG_DEBUG
   printf("Sending text message: %s\n", msg.c_str());
+#endif
 
   if (msg.length() > MessageSize) {
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("ERR: Cannot send message longer than MessageSize");
+#endif
     return false;
   }
 
   strncpy(message.info, msg.c_str(), MessageSize);
-#ifdef DEBUG
+#ifdef SERIAL_LOG_DEBUG
   Serial.println("DBG: Sending message");
 #endif
   success = SendMessageWithRetry(nextHop.value_or(BroadcastPeer), message) && success;
 
   if (!success) {
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("ERR: Failed to send text message.");
+#endif
   }
   return success;
 }

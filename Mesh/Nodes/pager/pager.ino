@@ -14,12 +14,14 @@ Author: Team 2
 Creation Date: 02/28/2026
 */
 
+// allow serial printing of debug statements
+#define SERIAL_LOG_DEBUG
+
 // Custom library headers
 #include "../../BLE.hpp"
 #include "../../Helpers.hpp"
 
 #include <memory>
-
 
 // setup:
 // Configure this device as a pager, initialize ESP-NOW and BLE.

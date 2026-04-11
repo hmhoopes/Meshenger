@@ -1,0 +1,35 @@
+/*
+Project: Meshenger
+Module Name: ServerPager.ino
+Description:
+Inputs:
+    - 
+Outputs:
+    - 
+External Sources:
+    - Helpers.hpp
+Author: Team 2
+Creation Date: 04/11/2026
+*/
+
+// Custom library headers
+#include "../../Helpers.hpp"
+
+#include <memory>
+
+// setup:
+// Configure this device as a pager, initialize ESP-NOW and BLE.
+void setup() {
+  String deviceUsername = "server-pager";
+  InitializeESPNow();
+}
+
+// loop:
+// Main loop for pager
+void loop() {
+  AnnouceMAC();
+#ifdef SERIAL_LOG_DEBUG
+  Serial.println("----------------testmessage----------------");
+#endif
+  delay(10000);
+}

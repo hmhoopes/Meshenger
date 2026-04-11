@@ -92,6 +92,7 @@ bool operator==(const MAC& left, const MAC& right){
 MAC GetMACAddress(){
   MAC baseMac;
   esp_err_t ret = esp_wifi_get_mac(WIFI_IF_STA, baseMac.GetAddressArray());
+#ifdef SERIAL_LOG_DEBUG
   switch (ret){
     case ESP_ERR_INVALID_ARG:
       Serial.println("Error: ESP_ERR_INVALID_ARG");
@@ -100,6 +101,7 @@ MAC GetMACAddress(){
     case ESP_ERR_WIFI_IF:
       Serial.println("Error: ESP_ERR_WIFI_IF");
   }
+#endif
   return std::move(baseMac);
 }
 

@@ -16,6 +16,9 @@ Author: Team 2
 Creation Date: 02/11/2026
 */
 
+// allow serial printing of debug statements
+#define SERIAL_LOG_DEBUG
+
 #include "../../Helpers.hpp"
 
 // setup:
@@ -30,11 +33,12 @@ void setup() {
 // Sends to the first directly connected peer, or falls back to the first routable destination.
 void loop() {
   AnnouceMAC();
-#ifdef DEBUG
+#ifdef SERIAL_LOG_DEBUG
   Serial.println("DBG: Annouced");
 #endif
   delay(2000);
 
+#ifdef SERIAL_LOG_DEBUG
   if (Peers.size() > 0) {
     Serial.print("Direct peers (");
     Serial.print(Peers.size());
@@ -44,7 +48,9 @@ void loop() {
       Serial.println(p.GetMAC().to_cstr());
     }
   }
+#endif
 
+#ifdef SERIAL_LOG_DEBUG
   if (RoutingTable.size() > 0) {
     Serial.println("Routable nodes:");
     for (auto& route : RoutingTable) {
@@ -54,6 +60,7 @@ void loop() {
       Serial.println(route.second.to_cstr());
     }
   }
+#endif
 
   // Prefer sending to a direct peer; fall back to first routable destination.
   std::optional<MAC> targetMAC;
@@ -64,7 +71,7 @@ void loop() {
   }
 
   if (targetMAC.has_value()) {
-#ifdef DEBUG
+#ifdef SERIAL_LOG_DEBUG
     Serial.print("DBG: Target: ");
     Serial.println(targetMAC->to_cstr());
     Serial.println("DBG: Waiting for message.");

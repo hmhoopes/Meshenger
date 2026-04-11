@@ -92,8 +92,10 @@ int ackId = -1;
 // Returns true on esp_now_send success.
 bool SendMessage(Peer target, const Message message) {
   if (!target.IsAdded()){
+#ifdef SERIAL_LOG_DEBUG
     Serial.print("ERR: Cannot send message to unadded peer target: ");
     Serial.println(target.mac.to_cstr());
+#endif
     return false;
   }
   // Send message via ESP-NOW
@@ -108,8 +110,10 @@ bool SendMessage(Peer target, const Message message) {
 // Uses TIMEOUT and MAX_RETRY to control behavior.
 bool SendMessageWithRetry(Peer target, const Message message) {
   if (!target.IsAdded()){
+#ifdef SERIAL_LOG_DEBUG
     Serial.print("ERR: Cannot send message to unadded peer target: ");
     Serial.println(target.mac.to_cstr());
+#endif
     return false;
   }
   // Send message via ESP-NOW
@@ -130,11 +134,15 @@ bool SendMessageWithRetry(Peer target, const Message message) {
 
     if (millis() - sendTime > (TIMEOUT * (retryCount + 1))) {
       if (retryCount >= MAX_RETRY) {
+#ifdef SERIAL_LOG_DEBUG
         Serial.println("ERR: Message failed to send - retry threshold reached");
+#endif
         return false;
       }
       retryCount++;
+#ifdef SERIAL_LOG_DEBUG
       Serial.printf("DBG: Resending message - attempt %d\n", retryCount);
+#endif
       result = esp_now_send(target.mac.GetAddressArray(), (uint8_t *) &message, sizeof(message));
       sendTime = millis();
       waitingForAck = true;

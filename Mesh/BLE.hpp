@@ -65,7 +65,9 @@ void Advertise(){
   }
 
   pServer->startAdvertising();
+#ifdef SERIAL_LOG_DEBUG
   Serial.println("[BLE] Advertising restarted");
+#endif
   isAdvertising = true;
 }
 
@@ -75,13 +77,17 @@ class ServerCallbacks : public BLEServerCallbacks {
   void onConnect(BLEServer* pServer) {
     deviceConnected = true;
     isAdvertising = false;
+#ifdef SERIAL_LOG_DEBUG
     Serial.println();
     Serial.println("[BLE] Client connected");
+#endif
   }
   void onDisconnect(BLEServer* pServer) {
     deviceConnected = false;
     Advertise();
+#ifdef SERIAL_LOG_DEBUG
     Serial.println("[BLE] Client disconnected");
+#endif
   }
 };
 
@@ -105,8 +111,10 @@ void ResetMessage(){
 }
 
 void SendMessage(){
+#ifdef SERIAL_LOG_DEBUG
   Serial.print("sending message: ");
   Serial.println(messageToSend);
+#endif
   SendTextMessage(targetMAC, messageToSend);
   ResetMessage();
 }
@@ -117,15 +125,19 @@ class RxCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) {
     auto rx_val = pCharacteristic->getValue();
     std::string rx = std::string(rx_val.c_str());
+#ifdef SERIAL_LOG_DEBUG
     Serial.print("[RX] Received from app: ");
     Serial.println(rx.c_str());
+#endif
     if (rx.empty()) {
         return;
     }
     
     if (messagePending){
+#ifdef SERIAL_LOG_DEBUG
       Serial.print("[RX] adding to message: ");
       Serial.println(rx.c_str());
+#endif
       auto idx = rx_val.indexOf(0x03);
       if (idx != -1){
         rx_val = rx_val.substring(0, idx); // Remove the delimiter from the text
@@ -135,7 +147,9 @@ class RxCallbacks : public BLECharacteristicCallbacks {
         messageToSend += rx_val;
       }
       if (messageToSend.length() > MessageSize) {
+#ifdef SERIAL_LOG_DEBUG
         Serial.println("ERR: Message exceeds max length, clearing out message ...");
+#endif
         ResetMessage();
       }
     } else if (rx[0] == 'm') {
@@ -146,18 +160,24 @@ class RxCallbacks : public BLECharacteristicCallbacks {
       size_t len = rx_val.length();
       if (len > 0) {
         const uint8_t* p = reinterpret_cast<const uint8_t*>(rx_val.c_str());
+#ifdef SERIAL_LOG_DEBUG
         Serial.print("[RX] ");
         SerialPrintPrintable(p, len);
         Serial.println();
+#endif
       }
 
       if(sendToMesh) {
+#ifdef SERIAL_LOG_DEBUG
         Serial.println("[MESH] Sending text to mesh...");
+#endif
         rx_val.remove(0,1);  // Remove the 'm' prefix before sending
         static constexpr auto targetPeerSize = 17;
 
         if (rx_val.length() < targetPeerSize) {
+#ifdef SERIAL_LOG_DEBUG
           Serial.println("ERR: Received message too short to contain target peer MAC");
+#endif
           return;
         } else {
           String targetPeerStr = rx_val.substring(0, targetPeerSize);
@@ -169,11 +189,15 @@ class RxCallbacks : public BLECharacteristicCallbacks {
             (uint8_t)strtoul(targetPeerStr.substring(12, 14).c_str(), nullptr, 16),
             (uint8_t)strtoul(targetPeerStr.substring(15, 17).c_str(), nullptr, 16)
           });
+#ifdef SERIAL_LOG_DEBUG
           Serial.print("Parsed temp MAC: ");
           Serial.println(tempMac.to_cstr());
+#endif
           targetMAC = tempMac;
+#ifdef SERIAL_LOG_DEBUG
           Serial.print("Parsed target MAC: ");
           Serial.println(targetMAC.to_cstr());
+#endif
         }
         auto text = rx_val.substring(targetPeerSize);
         auto idx = text.indexOf(0x03);
@@ -184,8 +208,10 @@ class RxCallbacks : public BLECharacteristicCallbacks {
         }
         messageToSend += text;
       }
+#ifdef SERIAL_LOG_DEBUG
       Serial.print("Still sending message?");
       Serial.println((messagePending) ? "true" : "false");
+#endif
     } else if (rx[0] == 'l') {
       // Command from app to list peers
       rx = "";  // No additional data needed
@@ -200,10 +226,14 @@ class RxCallbacks : public BLECharacteristicCallbacks {
         len = 12; // Truncate to 12 chars if longer
       }
       deviceUsername = rx_val.substring(0, len);
+#ifdef SERIAL_LOG_DEBUG
       Serial.print("Setting device username to: ");
       Serial.println(deviceUsername);
+#endif
     } else {
+#ifdef SERIAL_LOG_DEBUG
         Serial.println("ERR: Received unknown command from BLE client");
+#endif
     }
   }
 };
@@ -213,10 +243,12 @@ class RxCallbacks : public BLECharacteristicCallbacks {
 // set callbacks, and start advertising with the provided name suffix.
 void InitializeBLE(String aName){
   InitializeSerial();
+#ifdef SERIAL_LOG_DEBUG
   Serial.println();
   Serial.println("========== Meshenger Pager ==========");
   Serial.println("BLE NUS - connect with web app or any NUS client");
   Serial.println("=====================================");
+#endif
 
   BLEDevice::init(DEVICE_NAME + aName);
   pServer = BLEDevice::createServer();
@@ -245,8 +277,10 @@ void InitializeBLE(String aName){
   pAdvertising->setMaxPreferred(0x12);
   BLEDevice::startAdvertising();
   isAdvertising = true;
+#ifdef SERIAL_LOG_DEBUG
   Serial.println("[BLE] Advertising as \"" DEVICE_NAME "\"");
   Serial.println();
+#endif
 }
 
 // IsConnected:
@@ -258,14 +292,18 @@ bool IsConnected() {return deviceConnected; }
 // Send raw byte data to the connected BLE client via notifications,
 // chunking the payload to TX_BUF_SIZE and flushing on newline.
 void SendToApp(const std::span<const std::byte> aData){
+#ifdef SERIAL_LOG_DEBUG
   Serial.println("[TX] Preparing to send to app ...");
+#endif
   size_t dataLen = 0;
   const size_t dataSize = aData.size();
   if (dataSize == 0 || !deviceConnected) return;
 
+#ifdef SERIAL_LOG_DEBUG
   Serial.print("[TX] Sending to app (");
   Serial.print(dataSize);
   Serial.println(" bytes)");
+#endif
 
   uint8_t txBuf[TX_BUF_SIZE];
   int txLen = 0;
@@ -282,7 +320,9 @@ void SendToApp(const std::span<const std::byte> aData){
     pTxCharacteristic->setValue(txBuf, txLen);
     pTxCharacteristic->notify();
   }
+#ifdef SERIAL_LOG_DEBUG
   Serial.println("[TX] Sent to app");
+#endif
 }
 
 #endif
