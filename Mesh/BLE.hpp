@@ -134,6 +134,10 @@ class RxCallbacks : public BLECharacteristicCallbacks {
       } else {
         messageToSend += rx_val;
       }
+      if (messageToSend.length() > MessageSize) {
+        Serial.println("ERR: Message exceeds max length, clearing out message ...");
+        ResetMessage();
+      }
     } else if (rx[0] == 'm') {
       // Message from app to send to mesh
       rx = rx.substr(1);  // Remove message type prefix
