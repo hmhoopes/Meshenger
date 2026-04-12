@@ -21,8 +21,8 @@ import json
 #two minutes from now 
 timeout = time.time() + 60*2
 
-#Maps each sender name to tuple of sender' pub key, flag indicator of activity, and connected MAC (only if active)
-user_tracking: dict[str, tuple[str, bool, str]] = defaultdict(tuple)
+#Maps each sender name to tuple of sender' pub key, flag indicator of activity, and connected MAC, and missed heartbeats (only if active)
+user_tracking: dict[str, tuple[str, bool, str, int]] = defaultdict(tuple)
 
 #registers a user (if name isn't used, pub_key isn't used)
 # returns tuple of (bool, str) where bool is true if registered, false if not and str is an error message if registration fails
@@ -37,11 +37,11 @@ def register_user(name: str, pub_key: str, mac_addr: str):
 
     #replace any entries' mac address in user_tracking 
     broadcast_mac = "ff:ff:ff:ff:ff:ff"
-    for user, (key, active, addr) in user_tracking.items():
+    for user, (key, active, addr, miss) in user_tracking.items():
         if addr == mac_addr:
-            user_tracking[user] = (key, False, broadcast_mac)
+            user_tracking[user] = (key, False, broadcast_mac, miss)
 
-    user_tracking[name] = (pub_key, True, mac_addr)
+    user_tracking[name] = (pub_key, True, mac_addr, 0)
     print(f"User {name} registered successfully with public key {pub_key} and MAC {mac_addr}")
 
     return (True, f"User {name} registered successfully")
@@ -62,11 +62,11 @@ def sign_in_user(name: str, pub_key: str, mac_addr: str):
 
     #replace any entries' mac address in user_tracking 
     broadcast_mac = "ff:ff:ff:ff:ff:ff"
-    for user, (key, active, addr) in user_tracking.items():
+    for user, (key, active, addr, miss) in user_tracking.items():
         if addr == mac_addr:
-            user_tracking[user] = (key, False, broadcast_mac)
+            user_tracking[user] = (key, False, broadcast_mac, miss)
 
-    user_tracking[name] = (pub_key, True, mac_addr)
+    user_tracking[name] = (pub_key, True, mac_addr, 0)
     print(f"User {name} signed in successfully with MAC {mac_addr}")
     return (True, f"User {name} signed in successfully")
 
@@ -75,15 +75,13 @@ def update_user(name, mac):
         print(f"Name {name} not registered")
         return
     user_info = user_tracking[name]
-    if user_info[1]:
-        print(f"User {name} already signed in elsewhere, may be some issues")
-
+    
     print(f"Updated {name} from heartbeat")
-    user_tracking[name] = (user_info[0], True, mac)
+    user_tracking[name] = (user_info[0], True, mac, 0)
     return 
 
 def get_user_json(name: str) -> str:
     if name not in user_tracking:
         return None
-    pubkey, active, mac = user_tracking[name]
+    pubkey, active, mac, miss = user_tracking[name]
     return json.dumps({"name": name, "pubkey": pubkey, "active": active, "mac": mac})

@@ -114,6 +114,12 @@ function renderPeers() {
     const div = document.createElement('div');
     const text = document.createElement('span');
     const indicator = document.createElement('span');
+
+    if (peer.name == currentPeerId) {
+
+      peerStatusDot.classList.toggle('connected', peer && peer.activity);
+      peerStatusText.textContent = peer && peer.activity ? 'Online' : 'Offline';
+    }
     
     indicator.classList.add('status-dot');
     indicator.classList.toggle('connected', peer.activity);

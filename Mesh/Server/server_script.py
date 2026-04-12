@@ -20,6 +20,8 @@ import serial
 from message_store import store_message
 import user_tracking
 
+AcceptableHBMisses = 1
+
 SERVER_HB_TIME = 30
 
 #defines static serial port and baud rate 
@@ -78,10 +80,13 @@ def read_serial():
             if (time.time() - last_check > SERVER_HB_TIME):
                 last_check = time.time()
                 print(f"Heartbeat checking...")
-                for user, (key, active, addr) in user_tracking.user_tracking.items():
+                for user, (key, active, addr, miss) in user_tracking.user_tracking.items():
                     if active:
                         print(f"\tChecking user {user}")
-                        user_tracking.user_tracking[user] = (key, False, "ff:ff:ff:ff:ff:ff")
+                        if miss >= AcceptableHBMisses:
+                            user_tracking.user_tracking[user] = (key, False, "ff:ff:ff:ff:ff:ff", miss)
+                        else:
+                            user_tracking.user_tracking[user] = (key, active, addr, miss+1)
                         send_message(ser, addr, 'h', user, "test")
 
 

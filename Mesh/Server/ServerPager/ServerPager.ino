@@ -31,7 +31,7 @@ void setup() {
 // Main loop for pager
 void loop() {
   static int count = 0;
-  if (count >= 10000){
+  if (count >= 10000000000){
     count = 0;
     AnnouceMAC();
   }
@@ -43,5 +43,4 @@ void loop() {
     SendTextMessage(targetMac, readyMessage);
   }
   count++;
-  delay(1);
 }
