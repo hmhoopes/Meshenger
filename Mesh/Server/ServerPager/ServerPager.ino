@@ -30,7 +30,11 @@ void setup() {
 // loop:
 // Main loop for pager
 void loop() {
-  AnnouceMAC();
+  static int count = 0;
+  if (count >= 1000){
+    count = 0;
+    AnnouceMAC();
+  }
 #ifdef SERIAL_LOG_DEBUG
   Serial.println("----------------testmessage----------------");
 #endif
@@ -38,5 +42,6 @@ void loop() {
   if (targetMac != BroadcastMAC) {
     SendTextMessage(targetMac, readyMessage);
   }
-  delay(10000);
+  count++;
+  delay(10);
 }

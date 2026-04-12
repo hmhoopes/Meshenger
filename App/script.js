@@ -43,7 +43,7 @@ peers = [
     ],
   },
 */
-let peers = [];
+let PeerList = [];
 
 // MAX message length, used in sending message to ensure sending in esp-now 1 message sized chunks
 const MAX_ESP_PAYLOAD_LENGTH = 229;
@@ -71,7 +71,7 @@ let registering = false;
 
 // user list from server, with name, public key, and current mac address (if online)
 // example structure:
-/*userList = [
+/*UserList = [
   {
     name: "evan",
     publicKey: "abc123",
@@ -79,7 +79,7 @@ let registering = false;
     activity: true // or false if offline, can be used to show online status in UI
   },
 ]*/
-let userList = [];
+let UserList = [];
 
 // BLE connection state
 let device = null;
@@ -107,7 +107,7 @@ function setSection(section) {
 /** Populate the peers list in the Peers view */
 function renderPeers() {
   peersListEl.innerHTML = '';
-  peers.forEach(peer => {
+  PeerList.forEach(peer => {
     const li = document.createElement('li');
     const btn = document.createElement('button');
     const div = document.createElement('div');
@@ -138,8 +138,13 @@ function renderPeers() {
 
 /** Handle peer selection and open its chat window */
 function selectPeer(peerId) {
+  if (peerId === UserName) {
+    alert('Cannot select yourself as a peer');
+    return;
+  }
+
   currentPeerId = peerId;
-  const peer = peers.find(p => p.name === peerId);
+  const peer = PeerList.find(p => p.name === peerId);
   chatPeerLabel.textContent = peer ? `Chat with ${peer.name}` : 'Chat';
   peerStatusDot.classList.toggle('connected', peer && peer.activity);
   peerStatusText.textContent = peer && peer.activity ? 'Online' : 'Offline';
@@ -242,7 +247,7 @@ function HandleMessageFromDevice(message) {
 
   if (indicator === 'm') {
     if (message && isDisplayableText(message)){
-      let peer = peers.find(p => p.name === senderPeerName);
+      let peer = PeerList.find(p => p.name === senderPeerName);
       peer.messages.push({content: message, sender: false});
       console.log("peer messages", peer.messages);
       if (peer.name === currentPeerId) {
@@ -260,7 +265,6 @@ function HandleMessageFromDevice(message) {
     const success = message.slice(0, 1) === '1'; // first char indicates success
     if (success) {
       alert('Sign-in successful!');
-      UserName = "Unknown";
       usernameText.textContent = `Username: ${UserName}`;
     } else {
       alert('Sign-in failed: ' + message.slice(1));
@@ -276,7 +280,6 @@ function HandleMessageFromDevice(message) {
     const success = message.slice(0, 1) === '1'; // first char indicates success
     if (success) {
       alert('Registration successful!');
-      UserName = "Unknown";
       usernameText.textContent = `Username: ${UserName}`;
     } else {
       alert('Registration failed: ' + message.slice(1));
@@ -292,22 +295,22 @@ function HandleMessageFromDevice(message) {
 
     // will use stringToPubKey
     let pubXKey = stringToPubKey(entry.pubkey);
-    let existingIndex = userList.findIndex(u => u.name === entry.name);
+    let existingIndex = UserList.findIndex(u => u.name === entry.name);
     if (existingIndex !== -1) {
-      userList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity};
-      let peer = peers.find(p => p.name === entry.name);
+      UserList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity};
+      let peer = PeerList.find(p => p.name === entry.name);
       if (peer) {
         peer.activity = entry.activity;
       } else {
-        peers.push({name: entry.name, activity: entry.activity, messages: []});
+        PeerList.push({name: entry.name, activity: entry.activity, messages: []});
       }
     } else {
-      userList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity});
-      peers.push({name: entry.name, activity: entry.activity, messages: []});
-      console.log("updated peers list:", peers);
+      UserList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity});
+      PeerList.push({name: entry.name, activity: entry.activity, messages: []});
+      console.log("updated peers list:", PeerList);
       renderPeers(); // update UI
     }
-    console.log("Updated user list:", userList);
+    console.log("Updated user list:", UserList);
   } else if (indicator === 'u') {
     console.log("Received user list response:", message);
     let entry = JSON.parse(message);
@@ -317,22 +320,22 @@ function HandleMessageFromDevice(message) {
 
     // will use stringToPubKey
     let pubXKey = stringToPubKey(entry.pubkey);
-    let existingIndex = userList.findIndex(u => u.name === entry.name);
+    let existingIndex = UserList.findIndex(u => u.name === entry.name);
     if (existingIndex !== -1) {
-      userList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity};
-      let peer = peers.find(p => p.name === entry.name);
+      UserList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity};
+      let peer = PeerList.find(p => p.name === entry.name);
       if (peer) {
         peer.activity = entry.activity;
       } else {
-        peers.push({name: entry.name, activity: entry.activity, messages: []});
+        PeerList.push({name: entry.name, activity: entry.activity, messages: []});
       }
     } else {
-      userList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity});
-      peers.push({name: entry.name, activity: entry.activity, messages: []});
-      console.log("updated peers list:", peers);
+      UserList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity});
+      PeerList.push({name: entry.name, activity: entry.activity, messages: []});
+      console.log("updated peers list:", PeerList);
       renderPeers(); // update UI
     }
-    console.log("Updated user list:", userList);
+    console.log("Updated user list:", UserList);
   } else if (indicator === 'g') {
     //not sure what to do here, shouldn't be receiving messages with this indicator
   }
@@ -451,7 +454,7 @@ async function sendMessage(indicator, text, targetName, targetMac) {
         await rxChar.writeValue(data.slice(i, i + chunk));
       }
       
-      let peer = peers.find(p => p.name === targetName);
+      let peer = PeerList.find(p => p.name === targetName);
       if (indicator === 'm' && peer) {
         peer.messages.push({content: chunkText, sender: true});
         appendMessage(chunkText, true);
@@ -519,7 +522,11 @@ async function AttemptSendMessage(event){
   }
   const t = input.value;
   if (!t.trim() || sending) return;
-  let userEntry = userList.find(u => u.name === currentPeerId);
+  if (currentPeerId == UserName) {
+    alert('Cannot send message to yourself');
+    return;
+  }
+  let userEntry = UserList.find(u => u.name === currentPeerId);
   if (!userEntry) {
     alert('Selected peer not found in user list');
     return;
