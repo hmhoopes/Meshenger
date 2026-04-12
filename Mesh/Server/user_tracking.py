@@ -21,15 +21,6 @@ import json
 #two minutes from now 
 timeout = time.time() + 60*2
 
-#receives a mac_addr, if this mac_addr is not resent in a certain pre-defined time frame then does not 
-#honestly this definitely needs to be rewritten for ping timing, speed, resource and quite a bit but the gist is there 
-def heart_ping(mac_addr):
-    while time.time() < timeout:
-        ping = read_serial_mac() #rewrite this based on the way things are handled on input to return the mac_addr
-        if ping == mac_addr:
-            print(f"{mac_addr} alive!")
-            break
-
 #Maps each sender name to tuple of sender' pub key, flag indicator of activity, and connected MAC (only if active)
 user_tracking: dict[str, tuple[str, bool, str]] = defaultdict(tuple)
 
@@ -78,6 +69,18 @@ def sign_in_user(name: str, pub_key: str, mac_addr: str):
     user_tracking[name] = (pub_key, True, mac_addr)
     print(f"User {name} signed in successfully with MAC {mac_addr}")
     return (True, f"User {name} signed in successfully")
+
+def update_user(name, mac):
+    if name not in user_tracking:
+        print(f"Name {name} not registered")
+        return
+    user_info = user_tracking[name]
+    if user_info[1]:
+        print(f"User {name} already signed in elsewhere, may be some issues")
+
+    print(f"Updated {name} from heartbeat")
+    user_tracking[name] = (user_info[0], True, mac)
+    return 
 
 def get_user_json(name: str) -> str:
     if name not in user_tracking:

@@ -56,17 +56,14 @@ static constexpr int MessageSize = ESP_NOW_MAX_DATA_LEN - (sizeof(int) + sizeof(
 #pragma pack(push, 1) // Ensure no padding for consistent size
 typedef struct Message {
     const char* to_server_serial() const {
-      std::vector<uint8_t> dstAddr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-      memcpy(dstAddr.data(), dst, 6);
-      MAC dstMAC = MAC(dstAddr);
-
-      std::vector<uint8_t> srcAddr = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-      memcpy(srcAddr.data(), src, 6);
-      MAC srcMAC = MAC(srcAddr);
+      MAC dstMac(std::vector<uint8_t>(dst, dst + 6));
+      MAC srcMac(std::vector<uint8_t>(src, src + 6));
 
       char buf[300];
       //format: type|id|info
-      sprintf(buf, "%s|%s|%d|%d|%s\x1E", dstMAC.to_cstr(), srcMAC.to_cstr(), type, id, info);
+      const char* dst = strdup(dstMac.to_cstr());
+      const char* src = strdup(srcMac.to_cstr());
+      sprintf(buf, "%s|%s|%d|%d|%s\x1E", dst, src, type, id, info);
       return std::string(buf).c_str();
     }
 

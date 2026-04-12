@@ -75,8 +75,9 @@ let registering = false;
   {
     name: "evan",
     publicKey: "abc123",
-    mac: "00:11:22:33:44:55" // undefined what this would be if offline
-    activity: true // or false if offline, can be used to show online status in UI
+    mac: "00:11:22:33:44:55", // undefined what this would be if offline
+    activity: true, // or false if offline, can be used to show online status in UI
+    awaitingUpdate: false,
   },
 ]*/
 let UserList = [];
@@ -255,7 +256,10 @@ function HandleMessageFromDevice(message) {
       }
     }
   } else if (indicator === 'h') {
-    // TODO: handle heartbeat (e.g. update peer online status)
+    console.log("Received heartbeat, replying ...")
+    if (targetPeerName == UserName){
+      sendMessage('h', "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);
+    }
   } else if (indicator === 's') {
     if (!signingIn) {
       console.warn('Received unexpected sign-in message, ignoring');
@@ -289,6 +293,10 @@ function HandleMessageFromDevice(message) {
   } else if (indicator === 'l') {
     console.log("Received user list response:", message);
     let entry = JSON.parse(message);
+    if (!entry || Object.keys(entry).length === 0) {
+      console.warn('Empty or invalid entry, ignoring');
+      return;
+    }
     console.log("Parsed user list entry:", entry);
     // convert activity to boolean
     entry.activity = Boolean(entry.active);
@@ -297,7 +305,7 @@ function HandleMessageFromDevice(message) {
     let pubXKey = stringToPubKey(entry.pubkey);
     let existingIndex = UserList.findIndex(u => u.name === entry.name);
     if (existingIndex !== -1) {
-      UserList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity};
+      UserList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity, awaiting: false};
       let peer = PeerList.find(p => p.name === entry.name);
       if (peer) {
         console.log(`Updating peer ${peer} to have activity ${entry.activity}`);
@@ -306,7 +314,7 @@ function HandleMessageFromDevice(message) {
         PeerList.push({name: entry.name, activity: entry.activity, messages: []});
       }
     } else {
-      UserList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity});
+      UserList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity, awaiting: false});
       PeerList.push({name: entry.name, activity: entry.activity, messages: []});
       console.log("updated peers list:", PeerList);
     }
@@ -315,6 +323,10 @@ function HandleMessageFromDevice(message) {
   } else if (indicator === 'u') {
     console.log("Received user list response:", message);
     let entry = JSON.parse(message);
+    if (!entry || Object.keys(entry).length === 0) {
+      console.warn('Empty or invalid entry, ignoring');
+      return;
+    }
     console.log("Parsed user list entry:", entry);
     // convert activity to boolean
     entry.activity = Boolean(entry.active);
@@ -323,7 +335,7 @@ function HandleMessageFromDevice(message) {
     let pubXKey = stringToPubKey(entry.pubkey);
     let existingIndex = UserList.findIndex(u => u.name === entry.name);
     if (existingIndex !== -1) {
-      UserList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity};
+      UserList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity, awaiting: false};
       let peer = PeerList.find(p => p.name === entry.name);
       if (peer) {
         console.log(`Updating peer ${peer} to have activity ${entry.activity}`);
@@ -332,7 +344,7 @@ function HandleMessageFromDevice(message) {
         PeerList.push({name: entry.name, activity: entry.activity, messages: []});
       }
     } else {
-      UserList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity});
+      UserList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity, awaiting: false});
       PeerList.push({name: entry.name, activity: entry.activity, messages: []});
       console.log("updated peers list:", PeerList);
     }
@@ -479,15 +491,6 @@ async function requestPeers() {
   console.log('Requested peer list from device, waiting for response...');
 }
 
-async function requestUserEntry(username) {
-  if (!rxChar) return;
-
-  console.log('Requesting user entry from device...');
-  let indicator = 'u';
-  await sendMessage(indicator, "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);
-  console.log('Requested user entry from device, waiting for response...');
-}
-
 async function AttemptLogin(username, password, register=false) {
   if (!rxChar) return;
   const encoder = new TextEncoder();
@@ -498,6 +501,10 @@ async function AttemptLogin(username, password, register=false) {
     username = username.slice(0, 12);
   }
   UserName = username;
+
+  PeerList.forEach(peer => {
+    peer.messages = [];
+  });
 
   //Set global Keys variable for use in encryption/decryption functions
   const tempKeys = await deriveKeyPair(password, salt);
@@ -514,6 +521,15 @@ async function AttemptLogin(username, password, register=false) {
     signingIn = true;
   }
   console.log('Requested to set name on device...');
+}
+
+async function requestUserEntry(username) {
+  if (!rxChar) return;
+
+  console.log('Requesting user entry from device...');
+  let indicator = 'u';
+  await sendMessage(indicator, username, ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);
+  console.log('Requested user entry from device, waiting for response...');
 }
 
 async function AttemptSendMessage(event){
@@ -537,8 +553,33 @@ async function AttemptSendMessage(event){
     alert('Selected peer is currently offline');
     return;
   }
-  sendMessage('m', t, userEntry.name, userEntry.mac);
-  input.value = '';
+
+  userEntry.awaiting = true;
+  requestUserEntry(currentPeerId)
+  console.log("Refreshing user mac...")
+  //wait for user entry to update from server
+  const ms = 5000; // interval to wait
+  const interval = 50; // check every 50ms
+  let elapsed = 0;
+  let success = false;
+  while (elapsed < ms) {
+    userEntry = UserList.find(u => u.name === currentPeerId);
+    if (!userEntry.awaiting) {
+      success = true;
+      break;
+    } 
+    await new Promise(r => setTimeout(r, interval));
+    elapsed += interval;
+  }
+  if (success) {
+    console.log("Refreshed mac")
+    sendMessage('m', t, userEntry.name, userEntry.mac);
+    input.value = '';
+  } else {
+    console.log("Couldn't mac")
+    alert("Couldn't send message, server didn't verify mac");
+    return;
+  }
 }
 
 function InitialSetup() {

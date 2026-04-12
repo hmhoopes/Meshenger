@@ -15,9 +15,12 @@ Creation Date: 03/28/2026
 
 #self explanatory 
 import json
+import time
 import serial
 from message_store import store_message
 import user_tracking
+
+SERVER_HB_TIME = 30
 
 #defines static serial port and baud rate 
 #flag: serial port may not be assigned by server as static -- likely requires either manually changing this definition or forcing tty definition on server
@@ -49,28 +52,38 @@ def send_message(ser: serial.Serial, mac_addr: str, indicator: str, target_name:
     line = f"MSG:{mac_addr}{indicator+server_name_padded+target_name_padded+message}\x1E" # \x1E is the end-of-stream delimiter
     ser.write(line.encode('utf-8'))
     print(f"Sent the following line: |{line}|")
-
-#reads till we hit stop symbol '\x1E'
-def read_till_stop(serial: serial.Serial):
-    buffer = b''
-    while True:
-        byte = serial.read(1)
-        if byte == b'\x1E':
-            break
-        buffer += byte
-    serial.reset_input_buffer()
-    return buffer.decode('utf-8', errors='ignore').strip()
     
 #reads from serial 
 def read_serial():
     with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
         print(f"Listening on {SERIAL_PORT}...")
+        buffer = b''
+        line = ''
+        last_check = time.time()
         while True:
-            line = read_till_stop(ser)
-            if line:
+            byte = ser.read(1)
+            if byte == b'\x1E':
+                line = buffer.decode('utf-8', errors='ignore').strip()
+                buffer = b''
+                ser.reset_input_buffer()
+            else:
+                buffer += byte
+
+            if line != '':
                 #test clarity line, flag:removal after fixing
                 print(f"Raw received: {line}")
                 parse_and_store(ser, line)
+                line = ''
+
+            if (time.time() - last_check > SERVER_HB_TIME):
+                last_check = time.time()
+                print(f"Heartbeat checking...")
+                for user, (key, active, addr) in user_tracking.user_tracking.items():
+                    if active:
+                        print(f"\tChecking user {user}")
+                        user_tracking.user_tracking[user] = (key, False, "ff:ff:ff:ff:ff:ff")
+                        send_message(ser, addr, 'h', user, "test")
+
 
 #this naturally assumes that messages are formatted in MAC:mess, parses assuming this, stores
 ''' input formats:
@@ -117,10 +130,9 @@ def interpret_message(ser: serial.Serial, message: str):
     if indicator == 'm':  # message indicator
         print(f"Parsed message - Sender: {sender_name}, Recipient: {recipient_name}, Body: {message_body}")
         store_message(sender_name, message_body)
-        send_message(ser, src_mac, 'm', sender_name, message_body)  # forward message to recipient
+        #send_message(ser, src_mac, 'm', sender_name, message_body)  # forward message to recipient
     elif indicator == 'h':  # heartbeat indicator
-        #TODO
-        print(f"TODO: add heartbeat handling")
+        user_tracking.update_user(sender_name, src_mac)
     elif indicator == 's':  # sign in indicator
         key_parts = message_body.split('|', 1)
         if len(key_parts) != 2:
@@ -159,13 +171,14 @@ def interpret_message(ser: serial.Serial, message: str):
             print(f"\tUser entry string: {user_entry_str}, length: {len(user_entry_str)}")
             send_message(ser, src_mac, 'l', sender_name, user_entry_str)
     elif indicator == 'u':  # user entry request indicator
-        print(f"Received user entry request for {recipient_name} from {sender_name}, sending user entry...")
-        user_entry_str = user_tracking.get_user_json(recipient_name)
+        name = message_body[0:12]
+        print(f"Received user entry request for {recipient_name} from {sender_name} for {name}, sending user entry...")
+        user_entry_str = user_tracking.get_user_json(name)
         if user_entry_str is None:
             user_entry_str = "{}"
-            print(f"User {recipient_name} not found, sending empty response {user_entry_str}")
+            print(f"User {name} not found, sending empty response {user_entry_str}")
         else:
-            print(f"User entry string for {recipient_name}: {user_entry_str}, length: {len(user_entry_str)}")
+            print(f"User entry string for {name}: {user_entry_str}, length: {len(user_entry_str)}")
         send_message(ser, src_mac, 'u', sender_name, user_entry_str)
     elif indicator == 'g':  # get messages request indicator
         #TODO
