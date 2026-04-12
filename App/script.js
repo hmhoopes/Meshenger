@@ -248,12 +248,22 @@ function HandleMessageFromDevice(message) {
 
   if (indicator === 'm') {
     if (message && isDisplayableText(message)){
-      let peer = PeerList.find(p => p.name === senderPeerName);
-      peer.messages.push({content: message, sender: false});
-      console.log("peer messages", peer.messages);
-      if (peer.name === currentPeerId) {
-        appendMessage(message, false);
-      }
+      let userEntry = UserList.find(u => u.name === senderPeerName);
+      if (!userEntry){
+        alert("Cannot parse message from user ", senderPeerName);
+      } 
+      
+      sharedAesKey(Keys.xPriv, userEntry.publicKey)
+        .then(secret => decrypt(secret, message))
+        .then(decrypted => {
+          let peer = PeerList.find(p => p.name === senderPeerName);
+          if (peer) {
+            peer.messages.push({content: decrypted, sender: false});
+            if (peer.name == currentPeerId) {
+              appendMessage(decrypted, false);
+            }
+          }
+        });
     }
   } else if (indicator === 'h') {
     console.log("Received heartbeat, replying ...")
@@ -456,23 +466,15 @@ async function sendMessage(indicator, text, targetName, targetMac) {
   btnSend.disabled = true;
   try {
     const encoder = new TextEncoder();
-    for (let i = 0; i < trimmed.length; i += MAX_MESSAGE_LENGTH) {
-      const chunkText = trimmed.slice(i, i + MAX_MESSAGE_LENGTH);
-      //encodes with message type 'm' for message, followed by the text and end-of-stream as delimiter
-      const usernamePadded = UserName.padEnd(12, '\x01').slice(0, 12); // ensure username is exactly 12 chars
-      const targetPeerPadded = targetName.padEnd(12, '\x01').slice(0, 12); // ensure target peer ID is exactly 12 chars
-      indicator = indicator.slice(0, 1); // ensure indicator is 1 char
-      const data = encoder.encode('m'+ targetMac + indicator + usernamePadded + targetPeerPadded+ chunkText + String.fromCharCode(3)); 
-      const chunk = 20;
-      for (let i = 0; i < data.length; i += chunk) {
-        await rxChar.writeValue(data.slice(i, i + chunk));
-      }
-      
-      let peer = PeerList.find(p => p.name === targetName);
-      if (indicator === 'm' && peer) {
-        peer.messages.push({content: chunkText, sender: true});
-        appendMessage(chunkText, true);
-      }
+    const chunkText = trimmed.slice(0, MAX_MESSAGE_LENGTH);
+    //encodes with message type 'm' for message, followed by the text and end-of-stream as delimiter
+    const usernamePadded = UserName.padEnd(12, '\x01').slice(0, 12); // ensure username is exactly 12 chars
+    const targetPeerPadded = targetName.padEnd(12, '\x01').slice(0, 12); // ensure target peer ID is exactly 12 chars
+    indicator = indicator.slice(0, 1); // ensure indicator is 1 char
+    const data = encoder.encode('m'+ targetMac + indicator + usernamePadded + targetPeerPadded+ chunkText + String.fromCharCode(3)); 
+    const chunk = 20;
+    for (let i = 0; i < data.length; i += chunk) {
+      await rxChar.writeValue(data.slice(i, i + chunk));
     }
     
   } finally {
@@ -573,7 +575,20 @@ async function AttemptSendMessage(event){
   }
   if (success) {
     console.log("Refreshed mac")
-    sendMessage('m', t, userEntry.name, userEntry.mac);
+    
+    const secret = await sharedAesKey(Keys.xPriv, userEntry.publicKey);
+    let peer = PeerList.find(p => p.name === currentPeerId);
+    const max_plain_length = maxPlaintextLength(MAX_MESSAGE_LENGTH);
+    for (let i = 0; i < t.length; i += max_plain_length) {
+      let chunk = t.slice(i, i+max_plain_length);
+      console.log("sending chunk: ", chunk)
+      const encrypted = await encrypt(secret, chunk);
+      await sendMessage('m', encrypted, userEntry.name, userEntry.mac);
+      if (peer) {
+        peer.messages.push({content: chunk, sender: true});
+        appendMessage(chunk, true);
+      }
+    }
     input.value = '';
   } else {
     console.log("Couldn't mac")
@@ -658,30 +673,51 @@ async function sharedAesKey(myXPriv, theirXPub) {
   return crypto.subtle.importKey("raw", raw, { name: "AES-GCM" }, false, ["encrypt", "decrypt"]);
 }
 
-/* ── encrypt ── */
+/* ── utils ── */
+const toB64   = (b) => btoa(String.fromCharCode(...b)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+const fromB64 = (s) => Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')), c => c.charCodeAt(0));
+
+/* ── encrypt → compact "iv.ct" string ── */
 async function encrypt(aesKey, plaintext) {
-  const iv   = crypto.getRandomValues(new Uint8Array(12));
-  const data = new TextEncoder().encode(plaintext);
-  const ct   = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, data);
-  return { iv: toHex(iv), ct: toHex(new Uint8Array(ct)) };
+  const iv  = crypto.getRandomValues(new Uint8Array(12));
+  const ct  = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, new TextEncoder().encode(plaintext));
+  return toB64(iv) + '.' + toB64(new Uint8Array(ct));   // ~16 + 1 + ~ceil(len*4/3) chars
 }
 
-/* ── decrypt ── */
-async function decrypt(aesKey, { iv, ct }) {
+/* ── decrypt from compact string ── */
+async function decrypt(aesKey, packed) {
+  const [ivB64, ctB64] = packed.split('.');
   const plain = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: fromHex(iv) },
+    { name: "AES-GCM", iv: fromB64(ivB64) },
     aesKey,
-    fromHex(ct)
+    fromB64(ctB64)
   );
   return new TextDecoder().decode(plain);
 }
 
 function pubKeyToString(xPub) {
-  return toHex(xPub);  // reuse your existing toHex util
+  return toB64(xPub);  // reuse your existing toHex util
 }
 
 function stringToPubKey(str) {
-  return fromHex(str);  // reuse your existing fromHex util
+  return fromB64(str);  // reuse your existing fromHex util
+}
+
+function encryptedLength(plaintextLength) {
+  const ciphertextBytes = plaintextLength + 16; // AES-GCM adds 16-byte tag
+  //console.log("cipher text bytes: ", ciphertextBytes);
+  const ivB64  = Math.ceil(12 * 4 / 3);         // 12 IV bytes → 16 Base64url chars
+  //console.log("ivB64: ", ivB64);
+  const ctB64  = Math.ceil(ciphertextBytes * 4 / 3); // round up to nearest 4
+  //console.log("ctB64:", ctB64);
+  return ivB64 + 1 + ctB64;                     // +1 for the '.' separator
+}
+
+function maxPlaintextLength(maxEncryptedLength) {
+  // inverse of encryptedLength:
+  // maxEncryptedLength = 16 + 1 + ceil((pl + 16) * 4/3)
+  // so: pl = floor((maxEncryptedLength - 17) * 3/4) - 16
+  return Math.floor((maxEncryptedLength - 17) * 3 / 4) - 16;
 }
 
 //----------------------------------------------------------------------------------------------------
