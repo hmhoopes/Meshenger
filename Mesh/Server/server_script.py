@@ -158,7 +158,15 @@ def interpret_message(ser: serial.Serial, message: str):
             user_entry_str = user_tracking.get_user_json(user)
             print(f"\tUser entry string: {user_entry_str}, length: {len(user_entry_str)}")
             send_message(ser, src_mac, 'l', sender_name, user_entry_str)
-
+    elif indicator == 'u':  # user entry request indicator
+        print(f"Received user entry request for {recipient_name} from {sender_name}, sending user entry...")
+        user_entry_str = user_tracking.get_user_json(recipient_name)
+        if user_entry_str is None:
+            user_entry_str = "{}"
+            print(f"User {recipient_name} not found, sending empty response {user_entry_str}")
+        else:
+            print(f"User entry string for {recipient_name}: {user_entry_str}, length: {len(user_entry_str)}")
+        send_message(ser, src_mac, 'u', sender_name, user_entry_str)
     elif indicator == 'g':  # get messages request indicator
         #TODO
         print(f"TODO: add get messages handling")

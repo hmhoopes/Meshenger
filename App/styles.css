@@ -52,6 +52,13 @@ h1 {
   gap: 0.4rem;
 }
 
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
 /* Gray dot when disconnected; green + glow when connected */
 .status-dot {
   width: 8px;
@@ -323,5 +330,9 @@ button:disabled {
 }
 
 #usernameText, #macText {
+  margin-right: 10px;
+}
+
+#chatPeerLabel {
   margin-right: 10px;
 }

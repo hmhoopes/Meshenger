@@ -37,7 +37,11 @@
 
     <!-- Messages view: chat window for the selected peer -->
     <section id="view-messages" class="view">
-      <h2 class="section-title" id="chatPeerLabel">No peer selected</h2>
+      <div class="chat-header">
+        <h2 class="section-title" id="chatPeerLabel">No peer selected</h2>
+        <span class="status-dot" id="peerStatusDot"></span>
+        <h2 class="section-title" id="peerStatusText">Offline</h2>
+      </div>
       <div id="messages"></div>
       <!-- Shown when no messages; hidden as soon as first message is appended -->
       <div class="empty-state" id="emptyState">

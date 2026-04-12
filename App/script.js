@@ -16,6 +16,8 @@ const btnPeerList = document.getElementById('btnPeerList');
 const btnSetName = document.getElementById('btnSetName');
 const btnSend = document.getElementById('btnSend');
 const statusDot = document.getElementById('statusDot');
+const peerStatusDot = document.getElementById('peerStatusDot');
+const peerStatusText = document.getElementById('peerStatusText');
 const statusText = document.getElementById('statusText');
 const macText = document.getElementById('macText');
 const usernameText = document.getElementById('usernameText');
@@ -34,6 +36,7 @@ const settingBrightness = document.getElementById('settingBrightness');
 peers = [
   {
     name: "evan",
+    activity: true, // or false if offline, can be used to show online status in UI
     "messages": [
       {content: "hello", sender: false},
       {content: "hi there", sender: true}
@@ -55,6 +58,9 @@ let ConnectedDeviceMac = "Unknown";
 
 //Server Name
 let ServerName = "ServerPi";
+//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// Will need to update this depending on the device selected as server
+//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 let ServerMAC = "e0:8c:fe:59:7b:84";
 
 //signing in / registering fields
@@ -69,7 +75,8 @@ let registering = false;
   {
     name: "evan",
     publicKey: "abc123",
-    mac: "00:11:22:33:44:55" // or null if offline
+    mac: "00:11:22:33:44:55" // undefined what this would be if offline
+    activity: true // or false if offline, can be used to show online status in UI
   },
 ]*/
 let userList = [];
@@ -103,9 +110,27 @@ function renderPeers() {
   peers.forEach(peer => {
     const li = document.createElement('li');
     const btn = document.createElement('button');
-    btn.textContent = peer.name;
+    const div = document.createElement('div');
+    const text = document.createElement('span');
+    const indicator = document.createElement('span');
+    
+    indicator.classList.add('status-dot');
+    indicator.classList.toggle('connected', peer.activity);
+
+    text.textContent = peer.name;
+
+    div.style.display = 'flex';
+    div.style.alignItems = 'center';
+    div.style.justifyContent = 'space-between';
+    div.style.width = '100%';
+
+    div.appendChild(text);
+    div.appendChild(indicator);
+
     btn.addEventListener('click', () => selectPeer(peer.name));
     console.log('Added peer to list:', peer.name);
+
+    btn.appendChild(div);
     li.appendChild(btn);
     peersListEl.appendChild(li);
   });
@@ -116,6 +141,8 @@ function selectPeer(peerId) {
   currentPeerId = peerId;
   const peer = peers.find(p => p.name === peerId);
   chatPeerLabel.textContent = peer ? `Chat with ${peer.name}` : 'Chat';
+  peerStatusDot.classList.toggle('connected', peer && peer.activity);
+  peerStatusText.textContent = peer && peer.activity ? 'Online' : 'Offline';
   // Highlight active peer
   const buttons = peersListEl.querySelectorAll('button');
   buttons.forEach(btn => {
@@ -187,9 +214,9 @@ function isDisplayableText(s) {
 
 // handle incoming message from device
 function HandleMessageFromDevice(message) {
-  const targetPeerId = message.slice(0, 17);
+  const sourcePeerId = message.slice(0, 17);
   message = message.slice(17); //remove the target peer ID from the message
-  console.log("Extracted target peer ID:", targetPeerId);
+  console.log("Extracted source peer ID:", sourcePeerId);
   console.log("message after slicing:", message);
 
   const indicator = message.slice(0, 1);
@@ -215,7 +242,7 @@ function HandleMessageFromDevice(message) {
 
   if (indicator === 'm') {
     if (message && isDisplayableText(message)){
-      let peer = peers.find(p => p.name === targetPeerId);
+      let peer = peers.find(p => p.name === senderPeerName);
       peer.messages.push({content: message, sender: false});
       console.log("peer messages", peer.messages);
       if (peer.name === currentPeerId) {
@@ -257,8 +284,55 @@ function HandleMessageFromDevice(message) {
       Keys = null;
     }
   } else if (indicator === 'l') {
-    // TODO: handle user list response (e.g. update userList variable and UI)
+    console.log("Received user list response:", message);
+    let entry = JSON.parse(message);
+    console.log("Parsed user list entry:", entry);
+    // convert activity to boolean
+    entry.activity = Boolean(entry.active);
+
     // will use stringToPubKey
+    let pubXKey = stringToPubKey(entry.pubkey);
+    let existingIndex = userList.findIndex(u => u.name === entry.name);
+    if (existingIndex !== -1) {
+      userList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity};
+      let peer = peers.find(p => p.name === entry.name);
+      if (peer) {
+        peer.activity = entry.activity;
+      } else {
+        peers.push({name: entry.name, activity: entry.activity, messages: []});
+      }
+    } else {
+      userList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity});
+      peers.push({name: entry.name, activity: entry.activity, messages: []});
+      console.log("updated peers list:", peers);
+      renderPeers(); // update UI
+    }
+    console.log("Updated user list:", userList);
+  } else if (indicator === 'u') {
+    console.log("Received user list response:", message);
+    let entry = JSON.parse(message);
+    console.log("Parsed user list entry:", entry);
+    // convert activity to boolean
+    entry.activity = Boolean(entry.active);
+
+    // will use stringToPubKey
+    let pubXKey = stringToPubKey(entry.pubkey);
+    let existingIndex = userList.findIndex(u => u.name === entry.name);
+    if (existingIndex !== -1) {
+      userList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity};
+      let peer = peers.find(p => p.name === entry.name);
+      if (peer) {
+        peer.activity = entry.activity;
+      } else {
+        peers.push({name: entry.name, activity: entry.activity, messages: []});
+      }
+    } else {
+      userList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity});
+      peers.push({name: entry.name, activity: entry.activity, messages: []});
+      console.log("updated peers list:", peers);
+      renderPeers(); // update UI
+    }
+    console.log("Updated user list:", userList);
   } else if (indicator === 'g') {
     //not sure what to do here, shouldn't be receiving messages with this indicator
   }
@@ -266,17 +340,7 @@ function HandleMessageFromDevice(message) {
 
 // function for processing peer list from device
 function HandlePeerListFromDevice(peerListStr) {
-  console.log('Received peer list data from device:', peerListStr);
-  const newPeers = JSON.parse(peerListStr);
-  for (const peer of newPeers) {
-    console.log("Processing peer from device:", peer);
-    if (!peers.some(p => p.name === peer)) {
-      console.log("Adding new peer to list:", peer);
-      peers.push({name: peer, messages: []});
-    }
-  }
-  console.log("Updated peers list:", peers);
-  renderPeers(); // update UI
+  console.log("function deprecated");
 }
 
 //function for handling incoming BLE notifications
@@ -305,10 +369,7 @@ function CharacteristicValueChanged(event) {
     rxBuffer = '';
     HandleMessageFromDevice(messageStr);
   } else if (rxBuffer[0] == 'l'){
-    rxBuffer = rxBuffer.slice(1); //remove the type character
-    let peerListStr = rxBuffer; 
-    rxBuffer = ''; 
-    HandlePeerListFromDevice(peerListStr);
+    console.log('peer list from device deprecated')
   }
 }
 
@@ -390,7 +451,7 @@ async function sendMessage(indicator, text, targetName, targetMac) {
         await rxChar.writeValue(data.slice(i, i + chunk));
       }
       
-      let peer = peers.find(p => p.name === targetMac);
+      let peer = peers.find(p => p.name === targetName);
       if (indicator === 'm' && peer) {
         peer.messages.push({content: chunkText, sender: true});
         appendMessage(chunkText, true);
@@ -411,6 +472,15 @@ async function requestPeers() {
   let indicator = 'l';
   await sendMessage(indicator, "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);  // command to trigger name setting
   console.log('Requested peer list from device, waiting for response...');
+}
+
+async function requestUserEntry(username) {
+  if (!rxChar) return;
+
+  console.log('Requesting user entry from device...');
+  let indicator = 'u';
+  await sendMessage(indicator, "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);
+  console.log('Requested user entry from device, waiting for response...');
 }
 
 async function AttemptLogin(username, password, register=false) {
@@ -441,6 +511,27 @@ async function AttemptLogin(username, password, register=false) {
   console.log('Requested to set name on device...');
 }
 
+async function AttemptSendMessage(event){
+  event.preventDefault();
+  if (Keys == null) {
+    alert('Please sign in or register before sending messages');
+    return;
+  }
+  const t = input.value;
+  if (!t.trim() || sending) return;
+  let userEntry = userList.find(u => u.name === currentPeerId);
+  if (!userEntry) {
+    alert('Selected peer not found in user list');
+    return;
+  }
+  if (userEntry.active === false) {
+    alert('Selected peer is currently offline');
+    return;
+  }
+  sendMessage('m', t, userEntry.name, userEntry.mac);
+  input.value = '';
+}
+
 function InitialSetup() {
   // --- Event listeners ---
   btnConnect.addEventListener('click', () => connect());
@@ -455,15 +546,7 @@ function InitialSetup() {
   });
 
   form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    if (Keys == null) {
-      alert('Please sign in or register before sending messages');
-      return;
-    }
-    const t = input.value;
-    if (!t.trim() || sending) return;
-    sendMessage('m', t, "default-targ", currentPeerId);
-    input.value = '';
+    AttemptSendMessage(e);
   });
 
   // Nav buttons: switch between Peers / Messages / Settings
