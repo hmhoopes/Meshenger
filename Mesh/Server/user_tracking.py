@@ -43,8 +43,16 @@ def register_user(name: str, pub_key: str, mac_addr: str):
         if user_info and user_info[0] == pub_key:
             print(f"Public key {pub_key} already registered")
             return (False, f"Public key {pub_key} already registered")
+
+    #replace any entries' mac address in user_tracking 
+    broadcast_mac = "ff:ff:ff:ff:ff:ff"
+    for user, (key, active, addr) in user_tracking.items():
+        if addr == mac_addr:
+            user_tracking[user] = (key, False, broadcast_mac)
+
     user_tracking[name] = (pub_key, True, mac_addr)
     print(f"User {name} registered successfully with public key {pub_key} and MAC {mac_addr}")
+
     return (True, f"User {name} registered successfully")
 
 #signs in a user (if name is registered, pub_key matches, and not already signed in)
@@ -60,6 +68,13 @@ def sign_in_user(name: str, pub_key: str, mac_addr: str):
     if user_info[1]:
         print(f"User {name} already signed in")
         return (False, f"User {name} already signed in")
+
+    #replace any entries' mac address in user_tracking 
+    broadcast_mac = "ff:ff:ff:ff:ff:ff"
+    for user, (key, active, addr) in user_tracking.items():
+        if addr == mac_addr:
+            user_tracking[user] = (key, False, broadcast_mac)
+
     user_tracking[name] = (pub_key, True, mac_addr)
     print(f"User {name} signed in successfully with MAC {mac_addr}")
     return (True, f"User {name} signed in successfully")

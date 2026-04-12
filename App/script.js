@@ -300,6 +300,7 @@ function HandleMessageFromDevice(message) {
       UserList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity};
       let peer = PeerList.find(p => p.name === entry.name);
       if (peer) {
+        console.log(`Updating peer ${peer} to have activity ${entry.activity}`);
         peer.activity = entry.activity;
       } else {
         PeerList.push({name: entry.name, activity: entry.activity, messages: []});
@@ -308,8 +309,8 @@ function HandleMessageFromDevice(message) {
       UserList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity});
       PeerList.push({name: entry.name, activity: entry.activity, messages: []});
       console.log("updated peers list:", PeerList);
-      renderPeers(); // update UI
     }
+    renderPeers(); // update UI
     console.log("Updated user list:", UserList);
   } else if (indicator === 'u') {
     console.log("Received user list response:", message);
@@ -325,6 +326,7 @@ function HandleMessageFromDevice(message) {
       UserList[existingIndex] = {name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity};
       let peer = PeerList.find(p => p.name === entry.name);
       if (peer) {
+        console.log(`Updating peer ${peer} to have activity ${entry.activity}`);
         peer.activity = entry.activity;
       } else {
         PeerList.push({name: entry.name, activity: entry.activity, messages: []});
@@ -333,8 +335,8 @@ function HandleMessageFromDevice(message) {
       UserList.push({name: entry.name, publicKey: pubXKey, mac: entry.mac, active: entry.activity});
       PeerList.push({name: entry.name, activity: entry.activity, messages: []});
       console.log("updated peers list:", PeerList);
-      renderPeers(); // update UI
     }
+    renderPeers(); // update UI
     console.log("Updated user list:", UserList);
   } else if (indicator === 'g') {
     //not sure what to do here, shouldn't be receiving messages with this indicator
