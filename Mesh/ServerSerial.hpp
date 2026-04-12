@@ -1,3 +1,27 @@
+/*
+Project: Meshenger
+Module Name: ServerSerial.hpp
+Description:
+    Serial I/O utilities for bidirectional communication between the server backend and the mesh
+    pager (Pager/ble_serial.ino). Provides functions to serialize outgoing Message structs and
+    parse incoming text messages with destination MAC addresses from the server.
+Inputs:
+    - Serialized messages from server backend: "MSG:<target-mac>|<content>" terminated by 0x1E
+    - Message structs (for serialization to server)
+Outputs:
+    - Message serialization to hardware UART (prefixed with "MSG:")
+    - Parsed destination MAC and message content as std::pair<String, MAC>
+Message Format:
+    - Server → Pager: "MSG:<XX:XX:XX:XX:XX:XX><content>\x1E"
+      where <XX:XX:XX:XX:XX:XX> is the 6-byte target peer MAC in colon-separated hex format
+    - Pager → Server: "MSG:" + Message.to_server_serial()
+External Sources:
+    - Message.hpp (Message struct and serialization)
+    - MAC.hpp (MAC address type and formatting)
+Author: Team 2
+Creation Date: 04/11/2026
+*/
+
 #ifndef SERVER_SERIAL_HPP
 #define SERVER_SERIAL_HPP
 

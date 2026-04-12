@@ -1,3 +1,41 @@
+/*
+Project: Meshenger
+Module Name: script.js
+Description:
+    Browser-side Web Bluetooth client for the Meshenger mesh messaging system. Connects to the
+    Meshenger-Pager ESP32 via Web Bluetooth (Nordic UART Service), enabling users to send and
+    receive encrypted messages across the mesh. Handles user authentication (sign-in/registration),
+    peer list management, user roster updates, and AES-GCM encryption/decryption using Ed25519 keys
+    derived from passwords.
+Inputs:
+    - Web Bluetooth notifications from NUS TX characteristic (message type prefix + sender + recipient + encrypted content)
+    - User interactions: peer selection, message composition, sign-in/registration, peer list refresh
+    - Server responses: user list entries, peer activity status, sign-in/registration confirmations
+Outputs:
+    - Serialized messages via Web Bluetooth NUS RX characteristic (destination MAC + indicator + sender name + target name + encrypted payload)
+    - Chat UI updates: message bubbles grouped by peer, online/offline status indicators, user roster
+Message Format (BLE → App):
+    - 'm' = encrypted message: sourceMac (17 chars) + indicator ('m') + senderName (12 chars padded) + targetName (12 chars padded) + encrypted payload
+    - 'l' = peer list response (deprecated)
+    - 'h' = heartbeat (pinger handshake)
+    - 's' = sign-in response: '1' (success) or '0<error msg>'
+    - 'r' = registration response: '1' (success) or '0<error msg>'
+    - 'u' = user roster entry: JSON {name, pubkey, mac, active}
+Message Format (App → BLE):
+    - 'm' + destinationMac (17 chars) + indicator + senderName (12 chars padded) + targetName (12 chars padded) + plaintext (chunked)
+Encryption:
+    - Uses PBKDF2 (600k iterations) to derive Ed25519 keypair from password
+    - Converts Ed25519 → X25519 for ECDH
+    - Computes shared AES-GCM key between peers
+    - Encrypts messages as "iv.ciphertext" (base64url-encoded)
+External Sources:
+    - Web Bluetooth API (NUS service UUIDs)
+    - @noble/curves (Ed25519, X25519, PBKDF2)
+    - Web Crypto API (AES-GCM, PBKDF2)
+Author: Team 2
+Creation Date: 04/12/2026
+*/
+
 console.log("Script loaded, initializing app...");
 // --- Nordic UART Service (NUS) ---
 // UUIDs must match LocalESP ble_serial.ino so the browser can find and use the service
