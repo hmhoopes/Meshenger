@@ -522,12 +522,12 @@ async function AttemptLogin(username, password, register=false) {
 
   //encodes with message type 's' for setting name
   let indicator = register ? 'r' : 's'; // 'r' for register, 's' for sign in
-  await sendMessage(indicator, messageText, ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);  // command to trigger name setting
   if (register) {
     registering = true;
   } else {
     signingIn = true;
   }
+  await sendMessage(indicator, messageText, ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);  // command to trigger name setting
   console.log('Requested to set name on device...');
 }
 
