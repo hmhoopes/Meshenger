@@ -353,3 +353,14 @@ button:disabled {
 #chatPeerLabel {
   margin-right: 10px;
 }
+
+.message .route {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+  opacity: 0.7;
+}
+
+.message.via-server .route {
+  color: #e3a84a; /* amber to indicate server relay */
+}

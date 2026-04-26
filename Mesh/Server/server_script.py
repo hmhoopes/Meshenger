@@ -74,6 +74,7 @@ def send_message(ser: serial.Serial, mac_addr: str, indicator: str, target_name:
     
 #reads from serial 
 def read_serial():
+    #TODO: update message handling so we wouldn't ignore serial while hanlding computationaly intensive tasks (sending user list, sending unrecieved messages)
     with serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1) as ser:
         print(f"Listening on {SERIAL_PORT}...")
         buffer = b''
@@ -212,6 +213,7 @@ def interpret_message(ser: serial.Serial, message: str):
         for recipient, messages in message_store[sender_name].items():
             for stored_uuid, message in messages:
                 print(f"Found message from {recipient}: {message}")
+                #TODO: add acking here
                 send_message(ser, src_mac, 'm', sender_name, stored_uuid+message, recipient)
                 time.sleep(0.1) # prevent flooding serial
 

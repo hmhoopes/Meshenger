@@ -77,8 +77,8 @@ peers = [
     name: "evan",
     activity: true, // or false if offline, can be used to show online status in UI
     "messages": [
-      {content: "hello", sender: false},
-      {content: "hi there", sender: true}
+      {content: "hello", sender: false, route: "direct"},
+      {content: "hi there", sender: true, route: "server"}
     ],
   },
 */
@@ -209,7 +209,7 @@ function selectPeer(peerId) {
   messagesEl.replaceChildren(); // clear messages when switching peers
   console.log(peer.messages);
   peer.messages.forEach(message => {
-    appendMessage(message.content, message.sender);
+    appendMessage(message.content, message.sender, message.route ?? null);
   });
   setSection('messages');
 }
@@ -242,14 +242,16 @@ function setConnected(connected) {
 }
 
 /** Add a message bubble (sent or received) and scroll to bottom */
-function appendMessage(text, sender) {
+function appendMessage(text, sender, route = null) {
   emptyState.classList.add('hidden');
   const div = document.createElement('div');
   div.className = 'message ' + (sender ? 'sent' : 'received');
+  if (route === 'server') div.classList.add('via-server');
   const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  div.innerHTML = `<span class="content">${escapeHtml(text)}</span><div class="time">${time}</div>`;
+  const routeLabel = `<div class="route">${route === 'server' ? '⚡ via server' : '✓ direct'}</div>`;
+  div.innerHTML = `<span class="content">${escapeHtml(text)}</span><div class="time">${time}</div>${routeLabel}`;
   messagesEl.appendChild(div);
-  messagesEl.scrollTop = messagesEl.scrollHeight;  // keep latest message in view
+  messagesEl.scrollTop = messagesEl.scrollHeight;
 }
 
 /** Escape text so it's safe to put in HTML (avoids XSS if ESP32 sends script) */
@@ -322,6 +324,10 @@ function HandleMessageFromDevice(message) {
       // reply with ack — send uuid back to sender so they can resolve their pendingAck
       sendMessage('a', uuid, senderPeerName.padEnd(12, '\x01').slice(0, 12), sourcePeerId);
 
+      //TODO: add method of detecting if direct or from server and update peer message to show
+      let deliveredDirect = sourcePeerId !== ServerMAC;
+      const route = !deliveredDirect ? 'server' : 'direct';
+
       //decrypt message
       sharedAesKey(Keys.xPriv, userEntry.publicKey)
         .then(secret => decrypt(secret, message))
@@ -334,9 +340,9 @@ function HandleMessageFromDevice(message) {
                 return;
               }
             }
-            peer.messages.push({content: decrypted, sender: false, uuid: uuid});
+            peer.messages.push({content: decrypted, sender: false, uuid: uuid, route: route});
             if (peer.name == currentPeerId) {
-              appendMessage(decrypted, false);
+              appendMessage(decrypted, false, route);
             }
           }
         });
@@ -700,6 +706,7 @@ async function AttemptSendMessage(event){
       const encrypted = await encrypt(secret, chunk);
 
       let delivered = false;
+      let deliveredDirect = false;
       let uuid = getMessageId();
       // only attempt to send direct if active
       if (userEntry.active !== false){
@@ -709,6 +716,7 @@ async function AttemptSendMessage(event){
           try {
             await sendMessageWithAck('m', uuid, encrypted, userEntry.name, userEntry.mac, RETRY_DELAYS[attempt]);
             delivered = true;
+            deliveredDirect = true;
           } catch (err) {
             console.warn(`Direct send attempt ${attempt + 1} failed: ${err.message}`);
           }
@@ -736,8 +744,9 @@ async function AttemptSendMessage(event){
       }
       
       if (peer) {
-        peer.messages.push({ content: chunk, sender: true });
-        appendMessage(chunk, true);
+        const route = delivered && !deliveredDirect ? 'server' : 'direct';
+        peer.messages.push({ content: chunk, sender: true, route });
+        appendMessage(chunk, true, route);
       }
     }
     input.value = '';
