@@ -23,6 +23,10 @@ from collections import defaultdict
 #Maps each sender MAC address string to the ordered list of messages received from that peer.
 message_store: defaultdict[str, defaultdict[str, list[tuple[str, str]]]] = defaultdict(lambda: defaultdict(list))
 
+# Maps group name to list of member names
+# group_store: dict[str, tuple[str, list[str]]]
+group_store: dict[str, list[str]] = {}
+
 #Record incoming message and store under sender MAC address. Make a new entry if message is from a new peer.
 #@note: will skip adding if detects duplicate
 def store_message(sender_addr: str, target_addr: str, uuid: str, message: str):
@@ -148,8 +152,8 @@ def interpret_message(ser: serial.Serial, message: str):
     indicator = content[0]
     sender_name = content[1:13].replace('\x01', '').strip() # remove padding and trim
     recipient_name = content[13:25].replace('\x01', '').strip() # remove padding and trim
-    message_body = content[25:].replace('\x01', '').strip()
-
+    message_body = content[25:]
+    
     if indicator == 'm':  # message indicator
         uuid = message_body[:8]
         message_text = message_body[8:]
@@ -218,7 +222,66 @@ def interpret_message(ser: serial.Serial, message: str):
                 #TODO: add acking here
                 send_message(ser, src_mac, 'm', sender_name, stored_uuid+message, recipient)
                 time.sleep(0.1) # prevent flooding serial
+    elif indicator == 'w':  # group creation indicator
+        unedited_message_body = content[25:]
+        group_name = unedited_message_body[0:12].replace('\x01', '').strip()
+        count_str = unedited_message_body[12:14]
+        print(f"Parsed group creating message with group name {group_name}, user count {count_str}")
+        try:
+            count = int(count_str)
+        except ValueError:
+            print(f"Invalid participant count '{count_str}', discarding")
+            send_message(ser, src_mac, 'w', sender_name, '0Invalid participant count')
+            return
 
+        if count < 1 or count > 9:
+            print(f"Participant count {count} out of range, discarding")
+            send_message(ser, src_mac, 'w', sender_name, '0Participant count must be between 1 and 9')
+            return
+
+        participants = []
+        for i in range(count):
+            start = 14 + (i * 12)
+            participant = unedited_message_body[start:start + 12].replace('\x01', '').strip()
+            participants.append(participant)
+
+        print(f"Group creation request from {sender_name}: group '{group_name}', participants: {participants}")
+
+        # check group name not already taken
+        if group_name in group_store:
+            print(f"Group name '{group_name}' already taken")
+            send_message(ser, src_mac, 'w', sender_name, f'0Group name {group_name} already taken')
+            return
+
+        # check all participants are registered
+        unregistered = [p for p in participants if p not in user_tracking.user_tracking]
+        if unregistered:
+            print(f"Unregistered participants: {unregistered}")
+            send_message(ser, src_mac, 'w', sender_name, f'0Unregistered participants: {", ".join(unregistered)}')
+            return
+
+        # check creator is registered
+        if sender_name not in user_tracking.user_tracking:
+            print(f"Creator {sender_name} not registered")
+            send_message(ser, src_mac, 'w', sender_name, '0Creator not registered')
+            return
+
+        # all good, register the group (include creator in member list)
+        all_members = [sender_name] + participants
+        group_store[group_name] = all_members
+        print(f"Group '{group_name}' created by {sender_name} with members {all_members}")
+        send_message(ser, src_mac, 'w', sender_name, f'1Group {group_name} created successfully')
+    elif indicator == 'p':  # group list request indicator
+        print(f"Received group list request from {sender_name}, sending groups...")
+        for group_name, members in group_store.items():
+            if sender_name in members:
+                group_entry = json.dumps({
+                    "name": group_name,
+                    "members": members
+                })
+                print(f"\tSending group entry: {group_entry}")
+                send_message(ser, src_mac, 'p', sender_name, group_entry)
+                time.sleep(0.1)  # prevent flooding serial
     else:
         #test clarity line, flag:removal after fixing
         print(f"Unrecognized message type '{indicator}', discarding: {message}")

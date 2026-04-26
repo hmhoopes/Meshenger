@@ -364,3 +364,27 @@ button:disabled {
 .message.via-server .route {
   color: #e3a84a; /* amber to indicate server relay */
 }
+
+.message .group-sender {
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 0.2rem;
+}
+
+#btnCreateGroup {
+  background: #e05555;
+  color: var(--bg);
+  padding: 0.65rem 1.25rem;
+  font-size: 0.9rem;
+  cursor: default;
+}
+
+#btnCreateGroup.connected {
+  background: var(--accent);
+  cursor: pointer;
+}
+
+#btnCreateGroup.connected:hover:not(:disabled) {
+  background: #4dce68;
+}

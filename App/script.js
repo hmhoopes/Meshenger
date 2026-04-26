@@ -53,6 +53,7 @@ const btnConnect = document.getElementById('btnConnect');
 const btnPeerList = document.getElementById('btnPeerList');
 const btnSetName = document.getElementById('btnSetName');
 const btnGetMessages = document.getElementById('btnGetMessages');
+const btnCreateGroup = document.getElementById('btnCreateGroup');
 const btnSend = document.getElementById('btnSend');
 const statusDot = document.getElementById('statusDot');
 const peerStatusDot = document.getElementById('peerStatusDot');
@@ -63,6 +64,8 @@ const usernameText = document.getElementById('usernameText');
 const navButtons = document.querySelectorAll('.nav-item');
 const peersListEl = document.getElementById('peersList');
 const peersView = document.getElementById('view-peers');
+const groupsView = document.getElementById('view-groups');
+const groupsListEl = document.getElementById('groupsList');
 const messagesView = document.getElementById('view-messages');
 const settingsView = document.getElementById('view-settings');
 const chatPeerLabel = document.getElementById('chatPeerLabel');
@@ -84,6 +87,24 @@ peers = [
 */
 let PeerList = [];
 
+// GroupList: array of group chat objects the current user belongs to.
+// Populated on login by querying the server for group membership.
+// Structure:
+// GroupList = [
+//   {
+//     name: "Team Alpha",          // unique group name (matches server-side registration)
+//     members: ["evan", "alice"],  // list of member usernames in this group
+//     messages: [                  // chronological list of all messages in this group
+//       {
+//         content: "hello everyone", // decrypted message text
+//         sender: "evan",            // username of who sent it (UserName = you sent it)
+//         route: "direct"            // "direct" or "server" — how the message was delivered
+//       }
+//     ]
+//   }
+// ]
+let GroupList = [];
+
 // MAX message length, used in sending message to ensure sending in esp-now 1 message sized chunks
 const MAX_ESP_PAYLOAD_LENGTH = 229;
 
@@ -94,6 +115,9 @@ const MESSAGE_UUID_OVERHEAD = 8; // 8 bytes for uuid when acking
 //TODO: update this and corresponding code to allow gcs
 const MAX_MESSAGE_LENGTH = MAX_ESP_PAYLOAD_LENGTH - MESSAGE_FIELDS_OVERHEAD;
 const MAX_UMESSAGE_LENGTH = MAX_MESSAGE_LENGTH - MESSAGE_UUID_OVERHEAD;
+// \x02 prefix + 12 char group name prepended to group message plaintext before encryption
+const GROUP_NAME_OVERHEAD = 1 + 12; // \x02 + group name
+const MAX_GMESSAGE_LENGTH = MAX_UMESSAGE_LENGTH - GROUP_NAME_OVERHEAD;
 
 let ConnectedDeviceMac = "Unknown";
 
@@ -149,6 +173,7 @@ function setSection(section) {
   peersView.classList.toggle('view-active', section === 'peers');
   messagesView.classList.toggle('view-active', section === 'messages');
   settingsView.classList.toggle('view-active', section === 'settings');
+  groupsView.classList.toggle('view-active', section === 'groups');
 }
 
 /** Populate the peers list in the Peers view */
@@ -227,6 +252,7 @@ function setConnected(connected) {
   btnPeerList.classList.toggle('connected', connected);
   btnSetName.classList.toggle('connected', connected);
   btnGetMessages.classList.toggle('connected', connected && UserName !== "Unknown");
+  btnCreateGroup.classList.toggle('connected', connected && UserName !== "Unknown");
   
   if (!connected) {
     ConnectedDeviceMac = "Unknown";
@@ -250,6 +276,76 @@ function appendMessage(text, sender, route = null) {
   const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   const routeLabel = `<div class="route">${route === 'server' ? '⚡ via server' : '✓ direct'}</div>`;
   div.innerHTML = `<span class="content">${escapeHtml(text)}</span><div class="time">${time}</div>${routeLabel}`;
+  messagesEl.appendChild(div);
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+}
+
+/** Populate the groups list in the Groups view */
+function renderGroups() {
+  groupsListEl.innerHTML = '';
+  if (GroupList.length === 0) {
+    const empty = document.createElement('li');
+    empty.style.color = 'var(--text-muted)';
+    empty.style.fontSize = '0.85rem';
+    empty.style.padding = '0.5rem 0';
+    empty.textContent = 'No groups yet.';
+    groupsListEl.appendChild(empty);
+    return;
+  }
+  GroupList.forEach(group => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    const div = document.createElement('div');
+    const name = document.createElement('span');
+    const memberCount = document.createElement('span');
+
+    name.textContent = group.name;
+    memberCount.textContent = `${group.members.length} members`;
+    memberCount.style.fontSize = '0.75rem';
+    memberCount.style.color = 'var(--text-muted)';
+
+    div.style.display = 'flex';
+    div.style.alignItems = 'center';
+    div.style.justifyContent = 'space-between';
+    div.style.width = '100%';
+
+    div.appendChild(name);
+    div.appendChild(memberCount);
+    btn.addEventListener('click', () => selectGroup(group.name));
+    btn.appendChild(div);
+    li.appendChild(btn);
+    groupsListEl.appendChild(li);
+  });
+}
+
+/** Handle group selection and open its chat window */
+function selectGroup(groupName) {
+  const group = GroupList.find(g => g.name === groupName);
+  if (!group) return;
+
+  currentPeerId = groupName;
+  chatPeerLabel.textContent = `Group: ${group.name} (${group.members.join(', ')})`;
+  peerStatusDot.classList.remove('connected'); // groups don't have a single online status
+  peerStatusText.textContent = `${group.members.length} members`;
+
+  messagesEl.replaceChildren();
+  group.messages.forEach(message => {
+    appendGroupMessage(message.content, message.sender, message.route ?? null);
+  });
+  setSection('messages');
+}
+
+/** Like appendMessage but includes a sender label for group context */
+function appendGroupMessage(text, sender, route = null) {
+  emptyState.classList.add('hidden');
+  const div = document.createElement('div');
+  const isMine = sender === UserName;
+  div.className = 'message ' + (isMine ? 'sent' : 'received');
+  if (route === 'server') div.classList.add('via-server');
+  const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const routeLabel = `<div class="route">${route === 'server' ? '⚡ via server' : '✓ direct'}</div>`;
+  const senderLabel = !isMine ? `<div class="group-sender">${escapeHtml(sender)}</div>` : '';
+  div.innerHTML = `${senderLabel}<span class="content">${escapeHtml(text)}</span><div class="time">${time}</div>${routeLabel}`;
   messagesEl.appendChild(div);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 }
@@ -343,29 +439,58 @@ function HandleMessageFromDevice(message) {
       // reply with ack — send uuid back to sender so they can resolve their pendingAck
       sendMessage('a', uuid, senderPeerName.padEnd(12, '\x01').slice(0, 12), sourcePeerId);
 
-      //TODO: add method of detecting if direct or from server and update peer message to show
       let deliveredDirect = sourcePeerId !== ServerMAC;
       const route = !deliveredDirect ? 'server' : 'direct';
 
       //decrypt message
       sharedAesKey(Keys.xPriv, userEntry.publicKey)
-        .then(secret => decrypt(secret, message))
-        .then(decrypted => {
+        .then(secret => {
+          // check for group prefix before decrypting
+          if (message.charCodeAt(0) === 0x02) {
+            console.log("group message, has gname so removing that and indicator")
+            const groupName = message.slice(1, 13).replace(/\x01/g, '').trim();
+            const encryptedBody = message.slice(13);
+            console.log("encrypted body: ", encryptedBody);
+            return decrypt(secret, encryptedBody).then(decrypted => ({ isGroup: true, groupName, decrypted }));
+          }
+          console.log("nongroup-message, so just decrypting it ", message)
+          return decrypt(secret, message).then(decrypted => ({ isGroup: false, decrypted }));
+        })
+        .then(({ isGroup, groupName, decrypted }) => {
+          if (isGroup) {
+            const group = GroupList.find(g => g.name === groupName);
+            if (group) {
+              for (const msg of group.messages) {
+                if (msg.uuid === uuid) {
+                  console.log("dropping duplicate group message:", decrypted);
+                  return;
+                }
+              }
+              group.messages.push({ content: decrypted, sender: senderPeerName, route, uuid });
+              if (currentPeerId === groupName) {
+                appendGroupMessage(decrypted, senderPeerName, route);
+              }
+            } else {
+              console.warn(`Received group message for unknown group '${groupName}', ignoring`);
+            }
+            return;
+          }
+
+          // normal direct message
           let peer = PeerList.find(p => p.name === senderPeerName);
           if (peer) {
-            for (const message of peer.messages) {
-              if (message.uuid == uuid) {
-                console.log("dropping since found duplicate message:", message.content);
+            for (const msg of peer.messages) {
+              if (msg.uuid === uuid) {
+                console.log("dropping duplicate message:", msg.content);
                 return;
               }
             }
-            peer.messages.push({content: decrypted, sender: false, uuid: uuid, route: route});
-            if (peer.name == currentPeerId) {
+            peer.messages.push({ content: decrypted, sender: false, uuid, route });
+            if (peer.name === currentPeerId) {
               appendMessage(decrypted, false, route);
             }
           }
         });
-      
     }
   } else if (indicator === 'h') {
     console.log("Received heartbeat, replying ...");
@@ -383,6 +508,7 @@ function HandleMessageFromDevice(message) {
       alert('Sign-in successful!');
       usernameText.textContent = `Username: ${UserName}`;
       btnGetMessages.classList.add('connected');
+      btnCreateGroup.classList.add('connected');
     } else {
       alert('Sign-in failed: ' + message.slice(1));
       UserName = "Unknown";
@@ -399,6 +525,7 @@ function HandleMessageFromDevice(message) {
       alert('Registration successful!');
       usernameText.textContent = `Username: ${UserName}`;
       btnGetMessages.classList.add('connected');
+      btnCreateGroup.classList.add('connected');
     } else {
       alert('Registration failed: ' + message.slice(1));
       UserName = "Unknown";
@@ -467,13 +594,49 @@ function HandleMessageFromDevice(message) {
   } else if (indicator === 'g') {
     //not sure what to do here, shouldn't be receiving messages with this indicator
   } else if (indicator === 'a') {
-  // message contains the ack'd message ID
-  const ackId = message.trim();
-  if (pendingAcks.has(ackId)) {
-    pendingAcks.get(ackId)(); // resolve the waiting promise
-    pendingAcks.delete(ackId);
+    // message contains the ack'd message ID
+    const ackId = message.trim();
+    if (pendingAcks.has(ackId)) {
+      pendingAcks.get(ackId)(); // resolve the waiting promise
+      pendingAcks.delete(ackId);
+    }
+  } else if (indicator === 'w') {
+    const success = message.slice(0, 1) === '1';
+    if (success) {
+        alert('Group created successfully!');
+    } else {
+        alert('Group creation failed: ' + message.slice(1));
+    }
+  } else if (indicator === 'p') {
+    console.log("Received group list entry:", message);
+    let entry;
+    try {
+        entry = JSON.parse(message);
+    } catch (e) {
+        console.warn('Failed to parse group entry, ignoring:', message);
+        return;
+    }
+    if (!entry || !entry.name) {
+        console.warn('Empty or invalid group entry, ignoring');
+        return;
+    }
+
+    const existingIndex = GroupList.findIndex(g => g.name === entry.name);
+    if (existingIndex !== -1) {
+        // update members in case they changed, preserve existing messages
+        GroupList[existingIndex].members = entry.members;
+        GroupList[existingIndex].creator = entry.creator;
+    } else {
+        GroupList.push({
+            name: entry.name,
+            creator: entry.creator,
+            members: entry.members,
+            messages: []  // messages populated as they arrive
+        });
+    }
+    renderGroups();
+    console.log("Updated group list:", GroupList);
   }
-}
 }
 
 // function for processing peer list from device
@@ -624,6 +787,13 @@ async function requestPeers() {
   let indicator = 'l';
   await sendMessage(indicator, "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);  // command to trigger name setting
   console.log('Requested peer list from device, waiting for response...');
+
+  // also request group list if signed in
+  if (UserName !== "Unknown") {
+    console.log('Requesting group list from server...');
+    await sendMessage('p', "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);
+    console.log('Requested group list from server, waiting for response...');
+  }
 }
 
 // handler function
@@ -635,6 +805,51 @@ async function requestMessages() {
   console.log('Requesting messages from server...');
   await sendMessage('g', "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);
   console.log('Requested messages from server, waiting for response...');
+}
+
+/** Send a group creation request to the server
+ *  Format: indicator 'w' + group name (12 chars padded \x01) + participant count (2 chars, e.g. "03") + participant names (12 chars each padded \x01)
+ *  Server will register the group and its members
+ */
+async function createGroup() {
+  if (UserName === "Unknown") {
+    alert('Please sign in before creating a group');
+    return;
+  }
+
+  const groupName = prompt('Enter group name (max 12 chars):');
+  if (!groupName || !groupName.trim()) return;
+
+  const countStr = prompt('Enter number of other participants (1-9):');
+  const count = parseInt(countStr);
+  if (isNaN(count) || count < 1 || count > 9) {
+    alert('Participant count must be between 1 and 9');
+    return;
+  }
+
+  const participants = [];
+  for (let i = 0; i < count; i++) {
+    const name = prompt(`Enter participant ${i + 1} name:`);
+    if (!name || !name.trim()) {
+      alert('Participant name cannot be empty');
+      return;
+    }
+    participants.push(name.trim().slice(0, 12));
+  }
+
+  // Build message body:
+  // 12 chars: group name padded with \x01
+  // 2 chars: participant count zero-padded (e.g. "03")
+  // 12 chars each: participant names padded with \x01
+  const groupNamePadded = groupName.trim().slice(0, 12).padEnd(12, '\x01');
+  const countPadded = String(count).padStart(2, '0');
+  const participantsPadded = participants.map(p => p.padEnd(12, '\x01')).join('');
+
+  const messageBody = groupNamePadded + countPadded + participantsPadded;
+
+  console.log('Sending group creation request:', messageBody);
+  await sendMessage('w', messageBody, ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);
+  console.log('Group creation request sent');
 }
 
 async function AttemptLogin(username, password, register=false) {
@@ -678,14 +893,7 @@ async function requestUserEntry(username) {
   console.log('Requested user entry from device, waiting for response...');
 }
 
-async function AttemptSendMessage(event){
-  event.preventDefault();
-  if (Keys == null) {
-    alert('Please sign in or register before sending messages');
-    return;
-  }
-  const t = input.value;
-  if (!t.trim() || sending) return;
+async function AttemptSendDirectMessage(t) {
   if (currentPeerId == UserName) {
     alert('Cannot send message to yourself');
     return;
@@ -697,82 +905,178 @@ async function AttemptSendMessage(event){
   }
 
   userEntry.awaiting = true;
-  requestUserEntry(currentPeerId)
-  console.log("Refreshing user mac...")
-  //wait for user entry to update from server
-  const ms = 5000; // interval to wait
-  const interval = 50; // check every 50ms
+  requestUserEntry(currentPeerId);
+  const ms = 5000;
+  const interval = 50;
   let elapsed = 0;
   let success = false;
   while (elapsed < ms) {
     userEntry = UserList.find(u => u.name === currentPeerId);
-    if (!userEntry.awaiting) {
-      success = true;
-      break;
-    } 
+    if (!userEntry.awaiting) { success = true; break; }
     await new Promise(r => setTimeout(r, interval));
     elapsed += interval;
   }
-  if (success) {
-    console.log("Refreshed mac")
-    
-    const secret = await sharedAesKey(Keys.xPriv, userEntry.publicKey);
-    let peer = PeerList.find(p => p.name === currentPeerId);
-    const max_plain_length = maxPlaintextLength(MAX_UMESSAGE_LENGTH);
-    for (let i = 0; i < t.length; i += max_plain_length) {
-      let chunk = t.slice(i, i+max_plain_length);
-      console.log("sending chunk: ", chunk)
+  if (!success) {
+    alert("Couldn't send message, server didn't verify mac");
+    return;
+  }
+
+  const secret = await sharedAesKey(Keys.xPriv, userEntry.publicKey);
+  let peer = PeerList.find(p => p.name === currentPeerId);
+  for (let i = 0; i < t.length; i += maxPlaintextLength(MAX_UMESSAGE_LENGTH)) {
+    const chunk = t.slice(i, i + maxPlaintextLength(MAX_UMESSAGE_LENGTH));
+    const encrypted = await encrypt(secret, chunk);
+
+    let delivered = false;
+    let deliveredDirect = false;
+    let uuid = getMessageId();
+
+    if (userEntry.active !== false) {
+      for (let attempt = 0; attempt < 4 && !delivered; attempt++) {
+        try {
+          await sendMessageWithAck('m', uuid, encrypted, userEntry.name, userEntry.mac, RETRY_DELAYS[attempt]);
+          delivered = true;
+          deliveredDirect = true;
+        } catch (err) {
+          console.warn(`Direct send attempt ${attempt + 1} failed: ${err.message}`);
+        }
+      }
+    }
+
+    uuid = getMessageId();
+    if (!delivered) {
+      for (let attempt = 0; attempt < 4 && !delivered; attempt++) {
+        try {
+          await sendMessageWithAck('m', uuid, encrypted, userEntry.name, ServerMAC, RETRY_DELAYS[attempt]);
+          delivered = true;
+        } catch (err) {
+          console.warn(`Server relay attempt ${attempt + 1} failed: ${err.message}`);
+        }
+      }
+    }
+
+    if (!delivered) {
+      alert(`Message delivery failed after all retries.`);
+      break;
+    }
+
+    if (peer) {
+      const route = delivered && !deliveredDirect ? 'server' : 'direct';
+      peer.messages.push({ content: chunk, sender: true, route });
+      appendMessage(chunk, true, route);
+    }
+  }
+  input.value = '';
+}
+
+async function AttemptSendGroupMessage(t, group) {
+  // build the group prefix: \x02 + group name padded to 12 chars
+  const groupPrefix = '\x02' + group.name.padEnd(12, '\x01').slice(0, 12);
+
+  // get members excluding ourselves
+  const otherMembers = group.members.filter(m => m !== UserName);
+
+  for (let i = 0; i < t.length; i += maxPlaintextLength(MAX_GMESSAGE_LENGTH)) {
+    const chunk = t.slice(i, i + maxPlaintextLength(MAX_GMESSAGE_LENGTH));
+
+    let anyDelivered = false;
+
+    for (const memberName of otherMembers) {
+      let userEntry = UserList.find(u => u.name === memberName);
+      if (!userEntry) {
+        alert(`User entry not found for group member ${memberName}, skipping`);
+        continue;
+      }
+
+      // refresh mac for this member
+      userEntry.awaiting = true;
+      requestUserEntry(memberName);
+      const ms = 5000;
+      const interval = 50;
+      let elapsed = 0;
+      while (elapsed < ms) {
+        userEntry = UserList.find(u => u.name === memberName);
+        if (!userEntry.awaiting) break;
+        await new Promise(r => setTimeout(r, interval));
+        elapsed += interval;
+      }
+      if (userEntry.awaiting) {
+        alert(`Couldn't refresh mac for ${memberName}, skipping`);
+        continue;
+      }
+
+      const secret = await sharedAesKey(Keys.xPriv, userEntry.publicKey);
       const encrypted = await encrypt(secret, chunk);
+      const gmessage = groupPrefix + encrypted;
 
       let delivered = false;
       let deliveredDirect = false;
       let uuid = getMessageId();
-      // only attempt to send direct if active
-      if (userEntry.active !== false){
-        // attempt direct send 4 times with doubling delay
+
+      // attempt direct
+      if (userEntry.active !== false) {
         for (let attempt = 0; attempt < 4 && !delivered; attempt++) {
-          console.log(`Attempt ${attempt + 1} to send chunk ...`);
           try {
-            await sendMessageWithAck('m', uuid, encrypted, userEntry.name, userEntry.mac, RETRY_DELAYS[attempt]);
+            await sendMessageWithAck('m', uuid, gmessage, userEntry.name, userEntry.mac, RETRY_DELAYS[attempt]);
             delivered = true;
             deliveredDirect = true;
           } catch (err) {
-            console.warn(`Direct send attempt ${attempt + 1} failed: ${err.message}`);
+            console.warn(`Direct send attempt ${attempt + 1} to ${memberName} failed: ${err.message}`);
           }
         }
       }
 
+      // fallback to server
       uuid = getMessageId();
-      // fallback: attempt via server 4 times with doubling delay
       if (!delivered) {
-        console.log("Direct send failed, falling back to server...");
         for (let attempt = 0; attempt < 4 && !delivered; attempt++) {
-          console.log(`Attempt ${attempt + 1} to send chunk ...`);
           try {
-            await sendMessageWithAck('m', uuid, encrypted, userEntry.name, ServerMAC, RETRY_DELAYS[attempt]); // route via server
+            await sendMessageWithAck('m', uuid, gmessage, userEntry.name, ServerMAC, RETRY_DELAYS[attempt]);
             delivered = true;
           } catch (err) {
-            console.warn(`Server relay attempt ${attempt + 1} failed: ${err.message}`);
+            console.warn(`Server relay attempt ${attempt + 1} to ${memberName} failed: ${err.message}`);
           }
         }
       }
 
-      if (!delivered) {
-        alert(`Message delivery failed after all retries.`);
-        break;
-      }
-      
-      if (peer) {
-        const route = delivered && !deliveredDirect ? 'server' : 'direct';
-        peer.messages.push({ content: chunk, sender: true, route });
-        appendMessage(chunk, true, route);
+      if (delivered) {
+        anyDelivered = true;
+        console.log(`Chunk delivered to ${memberName}`);
+      } else {
+        alert(`Failed to deliver chunk to ${memberName} after all retries`);
       }
     }
-    input.value = '';
-  } else {
-    console.log("Couldn't mac")
-    alert("Couldn't send message, server didn't verify mac");
+
+    if (anyDelivered) {
+      const route = 'direct'; // best effort across members, could refine
+      group.messages.push({ content: chunk, sender: UserName, route });
+      appendGroupMessage(chunk, UserName, route);
+    } else {
+      alert('Failed to deliver message to any group member');
+      break;
+    }
+  }
+  input.value = '';
+}
+
+async function AttemptSendMessage(event){
+  event.preventDefault();
+  if (Keys == null) {
+    alert('Please sign in or register before sending messages');
     return;
+  }
+  const t = input.value;
+  if (!t.trim() || sending) return;
+
+  let userEntry = UserList.find(u => u.name === currentPeerId);
+  const currentGroup = GroupList.find(g => g.name === currentPeerId);
+
+  if (userEntry) {
+    AttemptSendDirectMessage(t);
+  } else if (currentGroup){
+    AttemptSendGroupMessage(t, currentGroup);
+  } else {
+    alert('Selected peer or group not found in lists');
   }
 }
 
@@ -789,6 +1093,7 @@ function InitialSetup() {
     }
   });
   btnGetMessages.addEventListener('click', () => requestMessages());
+  btnCreateGroup.addEventListener('click', () => createGroup());
 
   form.addEventListener('submit', (e) => {
     AttemptSendMessage(e);
@@ -804,6 +1109,7 @@ function InitialSetup() {
 
   // Initial render
   renderPeers();
+  renderGroups();
   setSection('peers');
 }
 

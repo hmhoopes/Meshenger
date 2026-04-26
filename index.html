@@ -24,6 +24,7 @@
   <!-- Main navigation: Peers / Messages / Settings -->
   <nav class="main-nav">
     <button class="nav-item nav-item-active" data-section="peers">Peers</button>
+    <button class="nav-item" data-section="groups">Groups</button>
     <button class="nav-item" data-section="messages">Messages</button>
     <button class="nav-item" data-section="settings">Settings</button>
   </nav>
@@ -33,6 +34,12 @@
     <section id="view-peers" class="view view-active">
       <h2 class="section-title">Peers</h2>
       <ul id="peersList" class="peers-list"></ul>
+    </section>
+
+    <!-- Groups view: list of group chats the user belongs to -->
+    <section id="view-groups" class="view">
+      <h2 class="section-title">Groups</h2>
+      <ul id="groupsList" class="peers-list"></ul>
     </section>
 
     <!-- Messages view: chat window for the selected peer -->
@@ -76,9 +83,10 @@
   <header style="border-top: 1px solid var(--border); border-bottom: none;">
     <span style="font-size: 0.8rem; color: var(--text-muted);">Web app → BLE (Nordic UART) → LocalESP</span>
     <button id="btnConnect">Connect to device</button>
-    <button id="btnPeerList">Refresh Peer List</button>
+    <button id="btnPeerList">Refresh Peer / Group List</button>
     <button id="btnSetName">Set Device Name</button>
     <button id="btnGetMessages">Get Messages</button>
+    <button id="btnCreateGroup">Create Group</button>
   </header>
 
   <script type="module" src="App/script.js"></script>
