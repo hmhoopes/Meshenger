@@ -313,6 +313,23 @@ button:disabled {
   background: #4dce68;  /* your existing green hover */
 }
 
+#btnGetMessages {
+  background: #e05555;
+  color: var(--bg);
+  padding: 0.65rem 1.25rem;
+  font-size: 0.9rem;
+  cursor: default;
+}
+
+#btnGetMessages.connected {
+  background: var(--accent);
+  cursor: pointer;
+}
+
+#btnGetMessages.connected:hover:not(:disabled) {
+  background: #4dce68;
+}
+
 #btnSend {
   background: var(--accent);
   color: var(--bg);

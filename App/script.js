@@ -52,6 +52,7 @@ const input = document.getElementById('input');
 const btnConnect = document.getElementById('btnConnect');
 const btnPeerList = document.getElementById('btnPeerList');
 const btnSetName = document.getElementById('btnSetName');
+const btnGetMessages = document.getElementById('btnGetMessages');
 const btnSend = document.getElementById('btnSend');
 const statusDot = document.getElementById('statusDot');
 const peerStatusDot = document.getElementById('peerStatusDot');
@@ -88,9 +89,11 @@ const MAX_ESP_PAYLOAD_LENGTH = 229;
 
 // message sending fields:
 // 1 byte for message indicator + 12 bytes for sender name + 12 bytes for target name
-const MESSAGE_OVERHEAD = 1 + 12 + 12;
+const MESSAGE_FIELDS_OVERHEAD = 1 + 12 + 12;
+const MESSAGE_UUID_OVERHEAD = 8; // 8 bytes for uuid when acking
 //TODO: update this and corresponding code to allow gcs
-const MAX_MESSAGE_LENGTH = MAX_ESP_PAYLOAD_LENGTH - MESSAGE_OVERHEAD;
+const MAX_MESSAGE_LENGTH = MAX_ESP_PAYLOAD_LENGTH - MESSAGE_FIELDS_OVERHEAD;
+const MAX_UMESSAGE_LENGTH = MAX_MESSAGE_LENGTH - MESSAGE_UUID_OVERHEAD;
 
 let ConnectedDeviceMac = "Unknown";
 
@@ -99,7 +102,7 @@ let ServerName = "ServerPi";
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // Will need to update this depending on the device selected as server
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-let ServerMAC = "e0:8c:fe:59:7b:84";
+let ServerMAC = "b0:cb:d8:cc:bf:b0";
 
 //signing in / registering fields
 let UserName = "Unknown";
@@ -119,6 +122,11 @@ let registering = false;
   },
 ]*/
 let UserList = [];
+// stores messages being sent that are awaiting ack
+const pendingAcks = new Map();
+
+//increasing delays for ack attempts
+const RETRY_DELAYS = [500, 1000, 2000, 4000];
 
 // BLE connection state
 let device = null;
@@ -218,6 +226,7 @@ function setConnected(connected) {
 
   btnPeerList.classList.toggle('connected', connected);
   btnSetName.classList.toggle('connected', connected);
+  btnGetMessages.classList.toggle('connected', connected && UserName !== "Unknown");
   
   if (!connected) {
     ConnectedDeviceMac = "Unknown";
@@ -291,23 +300,47 @@ function HandleMessageFromDevice(message) {
   console.log("Obtained message", message, "ignoring extra lines:", lines.slice(1));
 
   if (indicator === 'm') {
+    let uuid = ''
+    if (indicator === 'm'){
+      uuid = message.slice(0, 8);
+      message = message.slice(8);
+      console.log("extracted message uuid: ", uuid);
+      console.log("message after slicing indicator:", message);
+    }
+
     if (message && isDisplayableText(message)){
       let userEntry = UserList.find(u => u.name === senderPeerName);
       if (!userEntry){
         alert("Cannot parse message from user ", senderPeerName);
+        return;
       } 
+      if (uuid === ''){
+        alert("received message w/o uuid, cannot parse");
+        return;
+      }
       
+      // reply with ack — send uuid back to sender so they can resolve their pendingAck
+      sendMessage('a', uuid, senderPeerName.padEnd(12, '\x01').slice(0, 12), sourcePeerId);
+
+      //decrypt message
       sharedAesKey(Keys.xPriv, userEntry.publicKey)
         .then(secret => decrypt(secret, message))
         .then(decrypted => {
           let peer = PeerList.find(p => p.name === senderPeerName);
           if (peer) {
-            peer.messages.push({content: decrypted, sender: false});
+            for (const message of peer.messages) {
+              if (message.uuid == uuid) {
+                console.log("dropping since found duplicate message:", message.content);
+                return;
+              }
+            }
+            peer.messages.push({content: decrypted, sender: false, uuid: uuid});
             if (peer.name == currentPeerId) {
               appendMessage(decrypted, false);
             }
           }
         });
+      
     }
   } else if (indicator === 'h') {
     console.log("Received heartbeat, replying ...")
@@ -324,6 +357,7 @@ function HandleMessageFromDevice(message) {
     if (success) {
       alert('Sign-in successful!');
       usernameText.textContent = `Username: ${UserName}`;
+      btnGetMessages.classList.add('connected');
     } else {
       alert('Sign-in failed: ' + message.slice(1));
       UserName = "Unknown";
@@ -339,6 +373,7 @@ function HandleMessageFromDevice(message) {
     if (success) {
       alert('Registration successful!');
       usernameText.textContent = `Username: ${UserName}`;
+      btnGetMessages.classList.add('connected');
     } else {
       alert('Registration failed: ' + message.slice(1));
       UserName = "Unknown";
@@ -406,7 +441,14 @@ function HandleMessageFromDevice(message) {
     console.log("Updated user list:", UserList);
   } else if (indicator === 'g') {
     //not sure what to do here, shouldn't be receiving messages with this indicator
+  } else if (indicator === 'a') {
+  // message contains the ack'd message ID
+  const ackId = message.trim();
+  if (pendingAcks.has(ackId)) {
+    pendingAcks.get(ackId)(); // resolve the waiting promise
+    pendingAcks.delete(ackId);
   }
+}
 }
 
 // function for processing peer list from device
@@ -527,6 +569,28 @@ async function sendMessage(indicator, text, targetName, targetMac) {
   }
 }
 
+function getMessageId() {
+ return Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join(''); // e.g. "a3f1c820"
+}
+
+async function sendMessageWithAck(indicator, uuid, text, targetName, targetMac, timeoutMs = 5000) {
+  const textWithId = uuid + text; // prepend ID so receiver can ACK it
+  console.log("message with uuid: ", textWithId)
+
+  const ackPromise = new Promise((resolve, reject) => {
+    pendingAcks.set(uuid, resolve);
+    setTimeout(() => {
+      if (pendingAcks.has(uuid)) {
+        pendingAcks.delete(uuid);
+        reject(new Error('ACK timeout'));
+      }
+    }, timeoutMs);
+  });
+
+  await sendMessage(indicator, textWithId, targetName, targetMac);
+  await ackPromise; // throws on timeout
+}
+
 /** Ask ESP32 for the current list of connected peers */
 async function requestPeers() {
   if (!rxChar) return;
@@ -535,6 +599,17 @@ async function requestPeers() {
   let indicator = 'l';
   await sendMessage(indicator, "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);  // command to trigger name setting
   console.log('Requested peer list from device, waiting for response...');
+}
+
+// handler function
+async function requestMessages() {
+  if (!rxChar || UserName === "Unknown") {
+    alert("Cannot get messages if not signed in!");
+    return;
+  }
+  console.log('Requesting messages from server...');
+  await sendMessage('g', "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);
+  console.log('Requested messages from server, waiting for response...');
 }
 
 async function AttemptLogin(username, password, register=false) {
@@ -595,10 +670,6 @@ async function AttemptSendMessage(event){
     alert('Selected peer not found in user list');
     return;
   }
-  if (userEntry.active === false) {
-    alert('Selected peer is currently offline');
-    return;
-  }
 
   userEntry.awaiting = true;
   requestUserEntry(currentPeerId)
@@ -622,14 +693,50 @@ async function AttemptSendMessage(event){
     
     const secret = await sharedAesKey(Keys.xPriv, userEntry.publicKey);
     let peer = PeerList.find(p => p.name === currentPeerId);
-    const max_plain_length = maxPlaintextLength(MAX_MESSAGE_LENGTH);
+    const max_plain_length = maxPlaintextLength(MAX_UMESSAGE_LENGTH);
     for (let i = 0; i < t.length; i += max_plain_length) {
       let chunk = t.slice(i, i+max_plain_length);
       console.log("sending chunk: ", chunk)
       const encrypted = await encrypt(secret, chunk);
-      await sendMessage('m', encrypted, userEntry.name, userEntry.mac);
+
+      let delivered = false;
+      let uuid = getMessageId();
+      // only attempt to send direct if active
+      if (userEntry.active !== false){
+        // attempt direct send 4 times with doubling delay
+        for (let attempt = 0; attempt < 4 && !delivered; attempt++) {
+          console.log(`Attempt ${attempt + 1} to send chunk ...`);
+          try {
+            await sendMessageWithAck('m', uuid, encrypted, userEntry.name, userEntry.mac, RETRY_DELAYS[attempt]);
+            delivered = true;
+          } catch (err) {
+            console.warn(`Direct send attempt ${attempt + 1} failed: ${err.message}`);
+          }
+        }
+      }
+
+      uuid = getMessageId();
+      // fallback: attempt via server 4 times with doubling delay
+      if (!delivered) {
+        console.log("Direct send failed, falling back to server...");
+        for (let attempt = 0; attempt < 4 && !delivered; attempt++) {
+          console.log(`Attempt ${attempt + 1} to send chunk ...`);
+          try {
+            await sendMessageWithAck('m', uuid, encrypted, userEntry.name, ServerMAC, RETRY_DELAYS[attempt]); // route via server
+            delivered = true;
+          } catch (err) {
+            console.warn(`Server relay attempt ${attempt + 1} failed: ${err.message}`);
+          }
+        }
+      }
+
+      if (!delivered) {
+        alert(`Message delivery failed after all retries.`);
+        break;
+      }
+      
       if (peer) {
-        peer.messages.push({content: chunk, sender: true});
+        peer.messages.push({ content: chunk, sender: true });
         appendMessage(chunk, true);
       }
     }
@@ -653,6 +760,7 @@ function InitialSetup() {
       AttemptLogin(username, password, registering);
     }
   });
+  btnGetMessages.addEventListener('click', () => requestMessages());
 
   form.addEventListener('submit', (e) => {
     AttemptSendMessage(e);

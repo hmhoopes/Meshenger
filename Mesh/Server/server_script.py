@@ -17,8 +17,23 @@ Creation Date: 03/28/2026
 import json
 import time
 import serial
-from message_store import store_message
 import user_tracking
+from collections import defaultdict
+
+#Maps each sender MAC address string to the ordered list of messages received from that peer.
+message_store: defaultdict[str, defaultdict[str, list[tuple[str, str]]]] = defaultdict(lambda: defaultdict(list))
+
+#Record incoming message and store under sender MAC address. Make a new entry if message is from a new peer.
+#@note: will skip adding if detects duplicate
+def store_message(sender_addr: str, target_addr: str, uuid: str, message: str):
+    print(f"Attempting to store message...")
+    for otherUuid, _ in message_store[target_addr][sender_addr]:
+        if otherUuid == uuid:
+            print(f"\tFound duplicate, not storing")
+            return
+    print(f"Stored")
+    message_store[target_addr][sender_addr].append((uuid, message))
+
 
 AcceptableHBMisses = 1
 
@@ -37,8 +52,8 @@ MAX_MESSAGE_LENGTH = MAX_ESP_PAYLOAD_LENGTH - MESSAGE_OVERHEAD
 server_name = "ServerPi"
 
 #sends back a message over serial 
-#format is MSG:target-mac|content, where content's format is 1 char for indicator, 12 chars for sender name, 12 chars for recipient name, message body
-def send_message(ser: serial.Serial, mac_addr: str, indicator: str, target_name: str, message: str):
+#format is MSG:target-mac|content, where content's format is 1 char for indicator, 12 chars for sender name, 12 chars for recipient name, message body, optional sender name (for retrieving old messages)
+def send_message(ser: serial.Serial, mac_addr: str, indicator: str, target_name: str, message: str, sender_name: str = ""):
     if len(message) > MAX_MESSAGE_LENGTH:
         print(f"Message too long to send, truncating to {MAX_MESSAGE_LENGTH} chars")
         message = message[:MAX_MESSAGE_LENGTH]
@@ -49,9 +64,11 @@ def send_message(ser: serial.Serial, mac_addr: str, indicator: str, target_name:
         print("Target name too long, truncating to 12 chars")
         target_name = target_name[:12]
     target_name_padded = target_name.ljust(12, '\x01')[:12] # pad with \x01 and truncate to 12 chars
-    server_name_padded = server_name.ljust(12, '\x01')[:12] # pad with \x01 and truncate to 12 chars
+    sender_name_padded = server_name.ljust(12, '\x01')[:12] # pad with \x01 and truncate to 12 chars
+    if sender_name != "":
+        sender_name_padded = sender_name.ljust(12, '\x01')[:12] # pad with \x01 and truncate to 12 chars
 
-    line = f"MSG:{mac_addr}{indicator+server_name_padded+target_name_padded+message}\x1E" # \x1E is the end-of-stream delimiter
+    line = f"MSG:{mac_addr}{indicator+sender_name_padded+target_name_padded+message}\x1E" # \x1E is the end-of-stream delimiter
     ser.write(line.encode('utf-8'))
     print(f"Sent the following line: |{line}|")
     
@@ -133,9 +150,13 @@ def interpret_message(ser: serial.Serial, message: str):
     message_body = content[25:].replace('\x01', '').strip()
 
     if indicator == 'm':  # message indicator
-        print(f"Parsed message - Sender: {sender_name}, Recipient: {recipient_name}, Body: {message_body}")
-        store_message(sender_name, message_body)
-        #send_message(ser, src_mac, 'm', sender_name, message_body)  # forward message to recipient
+        uuid = message_body[:8]
+        message_text = message_body[8:]
+        print(f"Parsed message - Sender: {sender_name}, Recipient: {recipient_name}, ID: {uuid} Body: {message_text}")
+        # ack the message
+        send_message(ser, src_mac, 'a', sender_name, uuid)
+        # store it in message list, skipping if uuid is already present
+        store_message(sender_name, recipient_name, uuid, message_text)
     elif indicator == 'h':  # heartbeat indicator
         user_tracking.update_user(sender_name, src_mac)
     elif indicator == 's':  # sign in indicator
@@ -175,6 +196,7 @@ def interpret_message(ser: serial.Serial, message: str):
             user_entry_str = user_tracking.get_user_json(user)
             print(f"\tUser entry string: {user_entry_str}, length: {len(user_entry_str)}")
             send_message(ser, src_mac, 'l', sender_name, user_entry_str)
+            time.sleep(0.1) # prevent flooding serial
     elif indicator == 'u':  # user entry request indicator
         name = message_body[0:12]
         print(f"Received user entry request for {recipient_name} from {sender_name} for {name}, sending user entry...")
@@ -186,8 +208,13 @@ def interpret_message(ser: serial.Serial, message: str):
             print(f"User entry string for {name}: {user_entry_str}, length: {len(user_entry_str)}")
         send_message(ser, src_mac, 'u', sender_name, user_entry_str)
     elif indicator == 'g':  # get messages request indicator
-        #TODO
-        print(f"TODO: add get messages handling")
+        print(f"Handling get messages request from {sender_name}...")
+        for recipient, messages in message_store[sender_name].items():
+            for stored_uuid, message in messages:
+                print(f"Found message from {recipient}: {message}")
+                send_message(ser, src_mac, 'm', sender_name, stored_uuid+message, recipient)
+                time.sleep(0.1) # prevent flooding serial
+
     else:
         #test clarity line, flag:removal after fixing
         print(f"Unrecognized message type '{indicator}', discarding: {message}")
