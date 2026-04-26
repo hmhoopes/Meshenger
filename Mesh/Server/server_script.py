@@ -37,7 +37,7 @@ def store_message(sender_addr: str, target_addr: str, uuid: str, message: str):
 
 AcceptableHBMisses = 1
 
-SERVER_HB_TIME = 30
+SERVER_HB_TIME = 15
 
 #defines static serial port and baud rate 
 #flag: serial port may not be assigned by server as static -- likely requires either manually changing this definition or forcing tty definition on server
