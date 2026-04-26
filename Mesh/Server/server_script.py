@@ -159,6 +159,8 @@ def interpret_message(ser: serial.Serial, message: str):
         # store it in message list, skipping if uuid is already present
         store_message(sender_name, recipient_name, uuid, message_text)
     elif indicator == 'h':  # heartbeat indicator
+        uuid = message_body[:8]
+        send_message(ser, src_mac, 'a', sender_name, uuid)
         user_tracking.update_user(sender_name, src_mac)
     elif indicator == 's':  # sign in indicator
         key_parts = message_body.split('|', 1)

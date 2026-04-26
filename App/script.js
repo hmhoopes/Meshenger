@@ -273,6 +273,25 @@ function isDisplayableText(s) {
   return printable >= Math.min(s.length, 1);
 }
 
+async function EnsureHBResponse() {
+  let uuid = getMessageId();
+  let delivered = false;
+  // attempt direct send 4 times with doubling delay
+  for (let attempt = 0; attempt < 4 && !delivered; attempt++) {
+    console.log(`Attempt ${attempt + 1} to send chunk ...`);
+    try {
+      await sendMessageWithAck('h', uuid, "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC, RETRY_DELAYS[attempt]);
+      delivered = true;
+    } catch (err) {
+      console.warn(`Direct send attempt ${attempt + 1} failed: ${err.message}`);
+    }
+  }
+
+  if (!delivered){
+    console.warn(`HB response was unable to be delivered :(`);
+  }
+}
+
 // handle incoming message from device
 function HandleMessageFromDevice(message) {
   const sourcePeerId = message.slice(0, 17);
@@ -349,9 +368,9 @@ function HandleMessageFromDevice(message) {
       
     }
   } else if (indicator === 'h') {
-    console.log("Received heartbeat, replying ...")
+    console.log("Received heartbeat, replying ...");
     if (targetPeerName == UserName){
-      sendMessage('h', "test", ServerName.padEnd(12, '\x01').slice(0, 12), ServerMAC);
+      EnsureHBResponse();
     }
   } else if (indicator === 's') {
     if (!signingIn) {
