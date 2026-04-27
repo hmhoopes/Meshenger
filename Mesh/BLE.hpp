@@ -45,8 +45,9 @@ void SendToApp(const std::span<const std::byte> aData);
 #define SERVICE_UUID        "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_RX   "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_TX   "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
-// Dedicated OTA bulk-data characteristic: WRITE_NR only, separate from CHARACTERISTIC_RX
-// so having both WRITE and WRITE_NR on the same characteristic doesn't break the ATT handler.
+// Dedicated OTA bulk-data characteristic, separate from CHARACTERISTIC_RX so having both
+// WRITE and WRITE_NR on the same characteristic doesn't break the ATT handler. Supports
+// both WRITE (with response, used by current app for flow control) and WRITE_NR (legacy).
 #define CHARACTERISTIC_OTA  "6E400004-B5A3-F393-E0A9-E50E24DCCA9E"
 #define TX_BUF_SIZE 512
 
@@ -62,6 +63,10 @@ bool otaMode = false;
 bool otaError = false;
 size_t otaExpectedSize = 0;
 size_t otaWritten = 0;
+size_t otaLastReported = 0;
+// Emit a device-side progress notification every ~4KB so the app's progress bar
+// tracks bytes actually written to flash, not bytes queued in Chrome's BLE stack.
+static constexpr size_t OTA_PROGRESS_INTERVAL = 4096;
 
 // Helpers
 #include "../Mesh/Helpers.hpp"
@@ -141,6 +146,7 @@ void HandleOTA(const String& rx_val) {
     if (rx_val.length() < 10) return;
     otaExpectedSize = (size_t)strtoul(rx_val.substring(2, 10).c_str(), nullptr, 16);
     otaWritten = 0;
+    otaLastReported = 0;
     otaError = false;
     if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
       std::string err = std::string("oerr:") + Update.errorString() + "\n";
@@ -202,8 +208,11 @@ void HandleOTA(const String& rx_val) {
 }
 
 // OtaDataCallbacks::onWrite:
-// Receives raw firmware binary chunks on the dedicated OTA characteristic (WRITE_NR).
+// Receives raw firmware binary chunks on the dedicated OTA characteristic.
 // Writes directly into the Update stream; no command prefix — pure binary data.
+// On a write failure, surfaces the error to the app immediately so it can abort
+// instead of waiting for the final 'oe' commit. On success, emits a throttled
+// "op<written>/<total>\n" progress notification roughly every OTA_PROGRESS_INTERVAL bytes.
 class OtaDataCallbacks : public BLECharacteristicCallbacks {
   void onWrite(BLECharacteristic* pCharacteristic) {
     if (!otaMode || otaError) return;
@@ -217,12 +226,23 @@ class OtaDataCallbacks : public BLECharacteristicCallbacks {
 #ifdef SERIAL_LOG_DEBUG
       Serial.printf("[OTA] write error: %s\n", Update.errorString());
 #endif
-    } else {
-      otaWritten += written;
-#ifdef SERIAL_LOG_DEBUG
-      Serial.printf("[OTA] written %u / %u bytes\n", (unsigned)otaWritten, (unsigned)otaExpectedSize);
-#endif
+      std::string err = std::string("oerr:") + Update.errorString() + "\n";
+      SendToApp(std::as_bytes(std::span<char>(reinterpret_cast<char*>(err.data()), err.size())));
+      return;
     }
+    otaWritten += written;
+
+    if (otaWritten - otaLastReported >= OTA_PROGRESS_INTERVAL || otaWritten >= otaExpectedSize) {
+      otaLastReported = otaWritten;
+      char buf[48];
+      int n = snprintf(buf, sizeof(buf), "op%u/%u\n", (unsigned)otaWritten, (unsigned)otaExpectedSize);
+      if (n > 0) {
+        SendToApp(std::as_bytes(std::span<char>(reinterpret_cast<char*>(buf), (size_t)n)));
+      }
+    }
+#ifdef SERIAL_LOG_DEBUG
+    Serial.printf("[OTA] written %u / %u bytes\n", (unsigned)otaWritten, (unsigned)otaExpectedSize);
+#endif
   }
 };
 
@@ -363,6 +383,9 @@ void InitializeBLE(String aName){
 #endif
 
   BLEDevice::init(DEVICE_NAME + aName);
+  // Request a larger ATT MTU so 240-byte OTA chunks fit in a single L2CAP frame.
+  // Chrome will negotiate down if it can't honor this; safe to ask either way.
+  BLEDevice::setMTU(247);
   pServer = BLEDevice::createServer();
   pServer->setCallbacks(new ServerCallbacks());
 
@@ -383,7 +406,7 @@ void InitializeBLE(String aName){
 
   pOtaCharacteristic = pService->createCharacteristic(
     CHARACTERISTIC_OTA,
-    BLECharacteristic::PROPERTY_WRITE_NR
+    BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR
   );
   pOtaCharacteristic->setCallbacks(new OtaDataCallbacks());
 

@@ -676,10 +676,14 @@ function CharacteristicValueChanged(event) {
   } else if (rxBuffer[0] == 'l'){
     console.log('peer list from device deprecated')
   } else if (rxBuffer[0] == 'o') {
-    const nl = rxBuffer.indexOf('\n');
-    if (nl === -1) return; // incomplete line, wait for more
-    HandleOtaResponse(rxBuffer.slice(1, nl));
-    rxBuffer = rxBuffer.slice(nl + 1);
+    // Drain every complete OTA message in the buffer — progress notifications
+    // can arrive back-to-back with the final ack during transfer.
+    while (rxBuffer.length > 0 && rxBuffer[0] === 'o') {
+      const nl = rxBuffer.indexOf('\n');
+      if (nl === -1) return; // incomplete line, wait for more
+      HandleOtaResponse(rxBuffer.slice(1, nl));
+      rxBuffer = rxBuffer.slice(nl + 1);
+    }
   }
 }
 
@@ -1104,12 +1108,26 @@ async function AttemptSendMessage(event){
 
 let otaResponseCallback = null;
 let otaInProgress = false;
-// 507 bytes data + 2-byte "od" header = 509 bytes total — fits within the 512-byte ATT MTU
-// that Chrome/BlueZ negotiates by default (max write = MTU - 3 = 509).
-// If the write fails the code retries at 18 bytes (safe for any MTU >= 23).
-const OTA_CHUNK_DATA = 507;
+// Bytes the device has confirmed it wrote to flash, reported via 'op' progress notifications.
+// Drives the progress bar so it tracks actual flash progress instead of browser queue depth.
+let otaDeviceProgress = 0;
+// 240-byte chunks fit safely within the negotiated ATT MTU (the pager calls
+// BLEDevice::setMTU(247) → max ATT payload 244). Used with writeValue (with response)
+// for natural per-chunk flow control — each await blocks until the controller acks
+// the write, so the queue can't overflow and surface as "GATT Error Unknown".
+const OTA_CHUNK_DATA = 240;
 
 function HandleOtaResponse(response) {
+  // 'p<sent>/<total>' = throttled device-side progress; informational only,
+  // does not satisfy the begin/end ack callback.
+  if (response[0] === 'p') {
+    const slash = response.indexOf('/');
+    if (slash !== -1) {
+      const sent = parseInt(response.slice(1, slash), 10);
+      if (!isNaN(sent)) otaDeviceProgress = sent;
+    }
+    return;
+  }
   if (otaResponseCallback) {
     const cb = otaResponseCallback;
     otaResponseCallback = null;
@@ -1137,18 +1155,19 @@ async function sendOtaData(firmware, progressCallback) {
   let sent = 0;
   let writeCount = 0;
 
-  // Use dedicated OTA characteristic (WRITE_NR) for ~10x speed vs writeValue ACK round-trips.
-  // Fall back to RX characteristic with 'od' prefix if the firmware is older and lacks it.
-  const useWriteNR = otaChar && otaChar.properties.writeWithoutResponse;
+  // Prefer the dedicated OTA characteristic with writeValue (with response): each await
+  // blocks until the controller confirms the write was received, giving natural flow
+  // control. Fall back to the RX characteristic with an 'od' prefix only when talking
+  // to firmware too old to have the OTA characteristic at all.
+  const useDedicatedOta = !!otaChar;
 
   while (sent < total) {
     const dataSize = Math.min(OTA_CHUNK_DATA, total - sent);
 
-    if (useWriteNR) {
+    if (useDedicatedOta) {
       const chunk = firmwareBytes.subarray(sent, sent + dataSize);
-      await otaChar.writeValueWithoutResponse(chunk);
+      await otaChar.writeValue(chunk);
     } else {
-      // Legacy path: 'od' prefix on RX characteristic (slow — one ACK round-trip per chunk)
       const chunk = new Uint8Array(dataSize + 2);
       chunk[0] = 0x6F; chunk[1] = 0x64; // 'od'
       chunk.set(firmwareBytes.subarray(sent, sent + dataSize), 2);
@@ -1159,7 +1178,7 @@ async function sendOtaData(firmware, progressCallback) {
     writeCount++;
     if (progressCallback) progressCallback(sent, total);
 
-    // Yield every 20 writes to keep the UI responsive and prevent BLE queue overflow
+    // Yield occasionally so the UI thread can repaint
     if (writeCount % 20 === 0) await new Promise(r => setTimeout(r, 0));
   }
 }
@@ -1176,6 +1195,7 @@ async function uploadFirmware(file) {
   const btnOtaEl  = document.getElementById('btnOta');
 
   otaInProgress = true;
+  otaDeviceProgress = 0;
   btnOtaEl.disabled = true;
   btnSend.disabled = true;
   progressEl.style.visibility = 'visible';
@@ -1191,15 +1211,15 @@ async function uploadFirmware(file) {
 
     // data
     await sendOtaData(firmware, (sent, total) => {
-      const pct = Math.round((sent / total) * 100);
+      // Prefer the device-confirmed byte count (from 'op' progress notifications) so
+      // the bar reflects flash progress, not browser queue depth. Fall back to bytes
+      // sent if no progress notification has arrived yet.
+      const display = otaDeviceProgress > 0 ? Math.min(otaDeviceProgress, sent) : sent;
+      const pct = Math.round((display / total) * 100);
       progressBar.value = pct;
       statusEl.textContent =
-        `Uploading… ${pct}% (${(sent/1024).toFixed(1)} / ${(total/1024).toFixed(1)} KB)`;
+        `Uploading… ${pct}% (${(display/1024).toFixed(1)} / ${(total/1024).toFixed(1)} KB)`;
     });
-
-    // Drain: writeValueWithoutResponse is fire-and-forget; wait for any queued chunks
-    // to be processed by OtaDataCallbacks on the firmware side before committing.
-    await new Promise(r => setTimeout(r, 500));
 
     // end
     await rxChar.writeValue(new Uint8Array([0x6F, 0x65])); // "oe"
