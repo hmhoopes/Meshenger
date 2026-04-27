@@ -388,3 +388,89 @@ button:disabled {
 #btnCreateGroup.connected:hover:not(:disabled) {
   background: #4dce68;
 }
+
+/* OTA view */
+.ota-hint {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  line-height: 1.5;
+}
+
+.ota-hint code, .ota-warning code {
+  font-family: 'JetBrains Mono', monospace;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1em 0.3em;
+  font-size: 0.9em;
+}
+
+.ota-label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.ota-label input[type="file"] {
+  display: block;
+  margin-top: 0.35rem;
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+#btnOta {
+  background: var(--accent);
+  color: var(--bg);
+  padding: 0.65rem 1.25rem;
+  font-size: 0.9rem;
+}
+
+#btnOta:hover:not(:disabled) { background: #4dce68; }
+#btnOta:disabled { background: var(--accent-dim); opacity: 0.6; }
+
+.ota-progress {
+  margin-top: 0.75rem;
+}
+
+.ota-progress progress {
+  width: 100%;
+  height: 8px;
+  border-radius: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+}
+
+.ota-progress progress::-webkit-progress-bar {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.ota-progress progress::-webkit-progress-value {
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+.ota-progress progress::-moz-progress-bar {
+  background: var(--accent);
+  border-radius: 4px;
+}
+
+.ota-status {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+  font-family: 'JetBrains Mono', monospace;
+  min-height: 1.2rem;
+}
+
+.ota-warning {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+  line-height: 1.5;
+}

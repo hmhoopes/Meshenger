@@ -42,6 +42,7 @@ console.log("Script loaded, initializing app...");
 const NUS_SERVICE = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
 const NUS_RX = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';  // we write here (app → ESP32)
 const NUS_TX = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';  // we subscribe here (ESP32 → app)
+const NUS_OTA = '6e400004-b5a3-f393-e0a9-e50e24dcca9e'; // bulk OTA data, WRITE_NR only
 
 // --- DOM references ---
 const messagesEl = document.getElementById('messages');
@@ -71,6 +72,7 @@ const settingsView = document.getElementById('view-settings');
 const chatPeerLabel = document.getElementById('chatPeerLabel');
 const settingSounds = document.getElementById('settingSounds');
 const settingBrightness = document.getElementById('settingBrightness');
+const otaView = document.getElementById('view-ota');
 
 //format for peers: "name", where name is peer's MAC, "messages", where message is an table array of message information from that peer
 //message has "content", which is text content, "sender", a boolean indicating if the message was sent by this user or received from the peer
@@ -157,6 +159,7 @@ let device = null;
 let server = null;
 let rxChar = null;
 let txChar = null;
+let otaChar = null;
 let rxBuffer = '';  // buffer incomplete lines from TX notifications (split on \n)
 let sending = false;  // prevent double-send and duplicate UI messages
 
@@ -174,6 +177,7 @@ function setSection(section) {
   messagesView.classList.toggle('view-active', section === 'messages');
   settingsView.classList.toggle('view-active', section === 'settings');
   groupsView.classList.toggle('view-active', section === 'groups');
+  otaView.classList.toggle('view-active', section === 'ota');
 }
 
 /** Populate the peers list in the Peers view */
@@ -671,6 +675,11 @@ function CharacteristicValueChanged(event) {
     HandleMessageFromDevice(messageStr);
   } else if (rxBuffer[0] == 'l'){
     console.log('peer list from device deprecated')
+  } else if (rxBuffer[0] == 'o') {
+    const nl = rxBuffer.indexOf('\n');
+    if (nl === -1) return; // incomplete line, wait for more
+    HandleOtaResponse(rxBuffer.slice(1, nl));
+    rxBuffer = rxBuffer.slice(nl + 1);
   }
 }
 
@@ -682,7 +691,7 @@ async function connect() {
       server.disconnect();
     } catch (_) {}
     setConnected(false);
-    device = server = rxChar = txChar = null;
+    device = server = rxChar = txChar = otaChar = null;
     return;
   }
 
@@ -694,7 +703,7 @@ async function connect() {
         { services: [NUS_SERVICE] },
         { namePrefix: 'Meshenger' }
       ],
-      optionalServices: [NUS_SERVICE]
+      optionalServices: [NUS_SERVICE, NUS_OTA]
     });
 
     // Store the connected device's MAC address
@@ -707,18 +716,29 @@ async function connect() {
     const gatt = await device.gatt.connect();
     server = gatt;
 
-    // 3) Get NUS service and the two characteristics
+    // 3) Get NUS service and characteristics
     const service = await gatt.getPrimaryService(NUS_SERVICE);
     txChar = await service.getCharacteristic(NUS_TX);
     rxChar = await service.getCharacteristic(NUS_RX);
+    try {
+      otaChar = await service.getCharacteristic(NUS_OTA);
+    } catch (_) {
+      otaChar = null; // older firmware without dedicated OTA characteristic
+    }
 
     // 4) Subscribe to TX – we get notified when ESP32 sends data
     rxBuffer = '';
     await txChar.startNotifications();
     txChar.addEventListener('characteristicvaluechanged', CharacteristicValueChanged);
 
-    // If ESP32 disconnects (e.g. power off), update UI
-    device.addEventListener('gattserverdisconnected', () => setConnected(false));
+    // If ESP32 disconnects (e.g. power off), update UI.
+    // During OTA finalization the device reboots — treat that disconnect as success so
+    // waitForOtaAck doesn't hang for 30 s before timing out.
+    device.addEventListener('gattserverdisconnected', () => {
+      if (otaInProgress) HandleOtaResponse('ok');
+      setConnected(false);
+      otaChar = null;
+    });
     setConnected(true);
   } catch (err) {
     // User cancelled the device picker – don't show an error
@@ -1080,6 +1100,128 @@ async function AttemptSendMessage(event){
   }
 }
 
+// ==================== OTA Update ====================
+
+let otaResponseCallback = null;
+let otaInProgress = false;
+// 507 bytes data + 2-byte "od" header = 509 bytes total — fits within the 512-byte ATT MTU
+// that Chrome/BlueZ negotiates by default (max write = MTU - 3 = 509).
+// If the write fails the code retries at 18 bytes (safe for any MTU >= 23).
+const OTA_CHUNK_DATA = 507;
+
+function HandleOtaResponse(response) {
+  if (otaResponseCallback) {
+    const cb = otaResponseCallback;
+    otaResponseCallback = null;
+    cb(response);
+  }
+}
+
+function waitForOtaAck(timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      otaResponseCallback = null;
+      reject(new Error('OTA response timeout'));
+    }, timeoutMs);
+    otaResponseCallback = (resp) => {
+      clearTimeout(timer);
+      if (resp.startsWith('ok')) resolve();
+      else reject(new Error(resp.replace(/^err:/, '')));
+    };
+  });
+}
+
+async function sendOtaData(firmware, progressCallback) {
+  const total = firmware.byteLength;
+  const firmwareBytes = new Uint8Array(firmware);
+  let sent = 0;
+  let writeCount = 0;
+
+  // Use dedicated OTA characteristic (WRITE_NR) for ~10x speed vs writeValue ACK round-trips.
+  // Fall back to RX characteristic with 'od' prefix if the firmware is older and lacks it.
+  const useWriteNR = otaChar && otaChar.properties.writeWithoutResponse;
+
+  while (sent < total) {
+    const dataSize = Math.min(OTA_CHUNK_DATA, total - sent);
+
+    if (useWriteNR) {
+      const chunk = firmwareBytes.subarray(sent, sent + dataSize);
+      await otaChar.writeValueWithoutResponse(chunk);
+    } else {
+      // Legacy path: 'od' prefix on RX characteristic (slow — one ACK round-trip per chunk)
+      const chunk = new Uint8Array(dataSize + 2);
+      chunk[0] = 0x6F; chunk[1] = 0x64; // 'od'
+      chunk.set(firmwareBytes.subarray(sent, sent + dataSize), 2);
+      await rxChar.writeValue(chunk);
+    }
+
+    sent += dataSize;
+    writeCount++;
+    if (progressCallback) progressCallback(sent, total);
+
+    // Yield every 20 writes to keep the UI responsive and prevent BLE queue overflow
+    if (writeCount % 20 === 0) await new Promise(r => setTimeout(r, 0));
+  }
+}
+
+async function uploadFirmware(file) {
+  if (!rxChar) { alert('Not connected to device'); return; }
+  if (otaInProgress) { alert('OTA already in progress'); return; }
+
+  const firmware = await file.arrayBuffer();
+  const firmwareSize = firmware.byteLength;
+  const statusEl  = document.getElementById('otaStatus');
+  const progressEl = document.getElementById('otaProgress');
+  const progressBar = document.getElementById('otaProgressBar');
+  const btnOtaEl  = document.getElementById('btnOta');
+
+  otaInProgress = true;
+  btnOtaEl.disabled = true;
+  btnSend.disabled = true;
+  progressEl.style.visibility = 'visible';
+  progressBar.value = 0;
+  statusEl.textContent = `Starting OTA (${(firmwareSize / 1024).toFixed(1)} KB)…`;
+
+  try {
+    // begin
+    const hexSize = firmwareSize.toString(16).padStart(8, '0');
+    await rxChar.writeValue(new TextEncoder().encode('ob' + hexSize));
+    await waitForOtaAck(10000);
+    statusEl.textContent = 'Uploading firmware…';
+
+    // data
+    await sendOtaData(firmware, (sent, total) => {
+      const pct = Math.round((sent / total) * 100);
+      progressBar.value = pct;
+      statusEl.textContent =
+        `Uploading… ${pct}% (${(sent/1024).toFixed(1)} / ${(total/1024).toFixed(1)} KB)`;
+    });
+
+    // Drain: writeValueWithoutResponse is fire-and-forget; wait for any queued chunks
+    // to be processed by OtaDataCallbacks on the firmware side before committing.
+    await new Promise(r => setTimeout(r, 500));
+
+    // end
+    await rxChar.writeValue(new Uint8Array([0x6F, 0x65])); // "oe"
+    statusEl.textContent = 'Finalizing…';
+    await waitForOtaAck(30000);
+
+    progressBar.value = 100;
+    statusEl.textContent = '✓ OTA complete — device is rebooting';
+    setConnected(false);
+    device = server = rxChar = txChar = otaChar = null;
+  } catch (err) {
+    statusEl.textContent = '✗ ' + err.message;
+    console.error('OTA error:', err);
+  } finally {
+    otaInProgress = false;
+    btnOtaEl.disabled = false;
+    btnSend.disabled = !device || !server || !server.connected;
+  }
+}
+
+// ==================== End OTA ====================
+
 function InitialSetup() {
   // --- Event listeners ---
   btnConnect.addEventListener('click', () => connect());
@@ -1094,6 +1236,11 @@ function InitialSetup() {
   });
   btnGetMessages.addEventListener('click', () => requestMessages());
   btnCreateGroup.addEventListener('click', () => createGroup());
+  document.getElementById('btnOta').addEventListener('click', () => {
+    const fileInput = document.getElementById('otaFile');
+    if (!fileInput.files.length) { alert('Please select a firmware .bin file first'); return; }
+    uploadFirmware(fileInput.files[0]);
+  });
 
   form.addEventListener('submit', (e) => {
     AttemptSendMessage(e);

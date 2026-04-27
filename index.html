@@ -27,6 +27,7 @@
     <button class="nav-item" data-section="groups">Groups</button>
     <button class="nav-item" data-section="messages">Messages</button>
     <button class="nav-item" data-section="settings">Settings</button>
+    <button class="nav-item" data-section="ota">OTA</button>
   </nav>
 
   <main>
@@ -76,6 +77,28 @@
         <input type="checkbox" id="settingBrightness" checked>
         High display brightness
       </label>
+    </section>
+    <!-- OTA view: upload compiled firmware binary over BLE -->
+    <section id="view-ota" class="view">
+      <h2 class="section-title">Firmware Update (OTA)</h2>
+      <p class="ota-hint">
+        Build with <code>make build-pager</code>, then select
+        <code>Mesh/Nodes/pager/build/pager.ino.bin</code> below.
+      </p>
+      <label class="ota-label">
+        Firmware binary (.bin)
+        <input type="file" id="otaFile" accept=".bin">
+      </label>
+      <button id="btnOta">Upload Firmware</button>
+      <div class="ota-progress" id="otaProgress">
+        <progress id="otaProgressBar" value="0" max="100"></progress>
+      </div>
+      <p id="otaStatus" class="ota-status"></p>
+      <p class="ota-warning">
+        &#9888; OTA requires the pager to be initially flashed via USB with
+        <code>make upload-pager</code> (<code>PARTITION=min_spiffs</code>).
+        Subsequent updates can use this UI.
+      </p>
     </section>
   </main>
 

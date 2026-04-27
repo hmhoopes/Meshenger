@@ -23,6 +23,7 @@ Creation Date: 02/28/2026
 #include <BLEServer.h>
 #include <BLEUtils.h>
 #include <BLE2902.h>
+#include <Update.h>
 
 //utility headers
 #include <span>
@@ -44,15 +45,23 @@ void SendToApp(const std::span<const std::byte> aData);
 #define SERVICE_UUID        "6E400001-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_RX   "6E400002-B5A3-F393-E0A9-E50E24DCCA9E"
 #define CHARACTERISTIC_TX   "6E400003-B5A3-F393-E0A9-E50E24DCCA9E"
+// Dedicated OTA bulk-data characteristic: WRITE_NR only, separate from CHARACTERISTIC_RX
+// so having both WRITE and WRITE_NR on the same characteristic doesn't break the ATT handler.
+#define CHARACTERISTIC_OTA  "6E400004-B5A3-F393-E0A9-E50E24DCCA9E"
 #define TX_BUF_SIZE 512
 
 // BLE global variables:
 // BLE server/characteristic pointers and connection/advertising/send flags.
 BLEServer* pServer = NULL;
 BLECharacteristic* pTxCharacteristic = NULL;
+BLECharacteristic* pOtaCharacteristic = NULL;
 bool deviceConnected = false;
 bool isAdvertising = false;
 bool sendToMesh = false;
+bool otaMode = false;
+bool otaError = false;
+size_t otaExpectedSize = 0;
+size_t otaWritten = 0;
 
 // Helpers
 #include "../Mesh/Helpers.hpp"
@@ -119,6 +128,104 @@ void SendMessage(){
   ResetMessage();
 }
 
+// HandleOTA:
+// Process OTA firmware update commands sent over BLE.
+// 'ob' + 8-hex-char size = begin, 'od' + binary data = chunk, 'oe' = commit and reboot.
+// Requires pager built with an OTA-capable partition scheme (e.g. min_spiffs).
+void HandleOTA(const String& rx_val) {
+  if (rx_val.length() < 2) return;
+  const char subcmd = rx_val[1];
+
+  if (subcmd == 'b') {
+    // begin: "ob" + 8 ASCII hex chars representing total firmware size
+    if (rx_val.length() < 10) return;
+    otaExpectedSize = (size_t)strtoul(rx_val.substring(2, 10).c_str(), nullptr, 16);
+    otaWritten = 0;
+    otaError = false;
+    if (!Update.begin(UPDATE_SIZE_UNKNOWN)) {
+      std::string err = std::string("oerr:") + Update.errorString() + "\n";
+      SendToApp(std::as_bytes(std::span<char>(reinterpret_cast<char*>(err.data()), err.size())));
+#ifdef SERIAL_LOG_DEBUG
+      Serial.printf("[OTA] begin failed: %s\n", Update.errorString());
+#endif
+      return;
+    }
+    otaMode = true;
+    std::string ok = "ook\n";
+    SendToApp(std::as_bytes(std::span<char>(reinterpret_cast<char*>(ok.data()), ok.size())));
+#ifdef SERIAL_LOG_DEBUG
+    Serial.printf("[OTA] Begin: expecting %u bytes\n", (unsigned)otaExpectedSize);
+#endif
+
+  } else if (subcmd == 'd') {
+    // data chunk: "od" + raw binary firmware bytes
+    if (!otaMode || otaError) return;
+    const size_t dataLen = rx_val.length() - 2;
+    if (dataLen == 0) return;
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(rx_val.c_str()) + 2;
+    const size_t written = Update.write(const_cast<uint8_t*>(data), dataLen);
+    if (written != dataLen) {
+      otaError = true;
+#ifdef SERIAL_LOG_DEBUG
+      Serial.printf("[OTA] write error: %s\n", Update.errorString());
+#endif
+    } else {
+      otaWritten += written;
+    }
+
+  } else if (subcmd == 'e') {
+    // end: commit the update and reboot
+    if (!otaMode) return;
+    otaMode = false;
+    if (otaError) {
+      Update.abort();
+      std::string err = "oerr:Write failed during transfer\n";
+      SendToApp(std::as_bytes(std::span<char>(reinterpret_cast<char*>(err.data()), err.size())));
+      return;
+    }
+    if (!Update.end(true)) {
+      std::string err = std::string("oerr:") + Update.errorString() + "\n";
+      SendToApp(std::as_bytes(std::span<char>(reinterpret_cast<char*>(err.data()), err.size())));
+#ifdef SERIAL_LOG_DEBUG
+      Serial.printf("[OTA] end failed: %s\n", Update.errorString());
+#endif
+      return;
+    }
+    std::string ok = "ook\n";
+    SendToApp(std::as_bytes(std::span<char>(reinterpret_cast<char*>(ok.data()), ok.size())));
+#ifdef SERIAL_LOG_DEBUG
+    Serial.println("[OTA] Complete — rebooting");
+#endif
+    delay(2000); // give Chrome time to receive the ook notification before the device disappears
+    ESP.restart();
+  }
+}
+
+// OtaDataCallbacks::onWrite:
+// Receives raw firmware binary chunks on the dedicated OTA characteristic (WRITE_NR).
+// Writes directly into the Update stream; no command prefix — pure binary data.
+class OtaDataCallbacks : public BLECharacteristicCallbacks {
+  void onWrite(BLECharacteristic* pCharacteristic) {
+    if (!otaMode || otaError) return;
+    auto rx_val = pCharacteristic->getValue();
+    const size_t dataLen = rx_val.length();
+    if (dataLen == 0) return;
+    const uint8_t* data = reinterpret_cast<const uint8_t*>(rx_val.c_str());
+    const size_t written = Update.write(const_cast<uint8_t*>(data), dataLen);
+    if (written != dataLen) {
+      otaError = true;
+#ifdef SERIAL_LOG_DEBUG
+      Serial.printf("[OTA] write error: %s\n", Update.errorString());
+#endif
+    } else {
+      otaWritten += written;
+#ifdef SERIAL_LOG_DEBUG
+      Serial.printf("[OTA] written %u / %u bytes\n", (unsigned)otaWritten, (unsigned)otaExpectedSize);
+#endif
+    }
+  }
+};
+
 // RxCallbacks::onWrite:
 // Handler for incoming BLE writes from the client (RX characteristic). Forwards data to mesh when enabled.
 class RxCallbacks : public BLECharacteristicCallbacks {
@@ -132,7 +239,12 @@ class RxCallbacks : public BLECharacteristicCallbacks {
     if (rx.empty()) {
         return;
     }
-    
+
+    if (rx_val[0] == 'o') {
+      HandleOTA(rx_val);
+      return;
+    }
+
     if (messagePending){
 #ifdef SERIAL_LOG_DEBUG
       Serial.print("[RX] adding to message: ");
@@ -268,6 +380,12 @@ void InitializeBLE(String aName){
   );
 
   pRxCharacteristic->setCallbacks(new RxCallbacks());
+
+  pOtaCharacteristic = pService->createCharacteristic(
+    CHARACTERISTIC_OTA,
+    BLECharacteristic::PROPERTY_WRITE_NR
+  );
+  pOtaCharacteristic->setCallbacks(new OtaDataCallbacks());
 
   pService->start();
   BLEAdvertising* pAdvertising = BLEDevice::getAdvertising();

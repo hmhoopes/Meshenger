@@ -34,6 +34,8 @@ void setup() {
 // loop:
 // Main loop for pager (currently only runs debug BLE send when enabled).
 void loop() {
+  if (otaMode) { delay(100); return; }
+
 #ifdef SENDTOAPP_DEBUG
   std::string message = "hellooooooooooo ";
   if (IsConnected()){
