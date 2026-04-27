@@ -7,8 +7,45 @@ Meshenger is a secure, decentralized messaging system built on ESP32 devices. It
 ### Diagram:
 ![Architecture Diagram|600](./refactoring_diagram.png)
 
+## Range & Capacity
+
+### Distance
+
+ESP-NOW operates in the 2.4 GHz band. The maximum **measured** distance between two nodes is **285 feet (≈ 87 m)** in direct line of sight. Real-world range will be lower in environments with walls, interference, or obstructions.
+
+Because Meshenger is a multi-hop mesh, nodes that are out of direct range of each other can still communicate by relaying messages through intermediate nodes. Theoretical end-to-end range scales with the number of nodes and their placement.
+
+The table below shows theoretical maximum end-to-end range for a linear chain of nodes, each spaced at the 285 ft measured limit (direct line of sight, ideal conditions):
+
+| Nodes | Hops | Max Distance (ft) | Max Distance (m) | Max Distance (mi) |
+|------:|-----:|------------------:|-----------------:|------------------:|
+| 2 | 1 | 285 | 87 | 0.05 |
+| 3 | 2 | 570 | 174 | 0.11 |
+| 4 | 3 | 855 | 261 | 0.16 |
+| 5 | 4 | 1,140 | 347 | 0.22 |
+| 6 | 5 | 1,425 | 434 | 0.27 |
+| 7 | 6 | 1,710 | 521 | 0.32 |
+| 8 | 7 | 1,995 | 608 | 0.38 |
+| 9 | 8 | 2,280 | 695 | 0.43 |
+| 10 | 9 | 2,565 | 782 | 0.49 |
+
+> These are theoretical maximums under ideal line-of-sight conditions. Actual range per hop will be shorter in real environments.
+
+### User / Node Limits
+
+| Limit | Value |
+|-------|-------|
+| Max peers per node (ESP-NOW hardware) | 20 |
+| Max users in a group chat | 10 |
+| Practical network size | depends on node placement and hop count |
+
+The 10-user group chat ceiling is a software limit imposed to keep routing and peer-table overhead manageable on constrained ESP32 hardware.
+
+---
+
 ## Table of Contents
 
+- [Range & Capacity](#range--capacity)
 - [How to Test Meshenger (Web App + Pager)](#how-to-test-meshenger-web-app--pager)
 - [App README](./App/README.md)
 - [Pager README](./Pager/README.md)
